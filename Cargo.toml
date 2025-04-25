@@ -1,0 +1,11 @@
+[package]
+name = "bili_downloader"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = "4.5.37"
+regex = "1.11.1"
+reqwest = "0.12.15"
+serde = "1.0.219"
+trauma = "2.2.6"
