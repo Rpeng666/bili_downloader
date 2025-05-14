@@ -4,8 +4,32 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = "4.5.37"
+anyhow = "1.0.98"
+bincode = { version = "2.0.1", features = ["serde"] }
+chrono = "0.4.41"
+clap = { version = "4.5.37", features = ["derive"] }
+colored = "3.0.0"
+cookie = "0.18.1"
+cookie_store = "0.21.1"
+dashmap = "6.1.0"
+flate2 = "1.1.1"
+futures = "0.3.31"
+hmac = "0.12.1"
+indicatif = "0.17.11"
+itertools = "0.14.0"
+md-5 = "0.10.6"
+qrcode = "0.14.1"
+rand = "0.9.1"
 regex = "1.11.1"
-reqwest = "0.12.15"
-serde = "1.0.219"
+reqwest = { version = "0.12.15", features = ["charset", "cookies", "json"] }
+reqwest_cookie_store = "0.8.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_derive = "1.0.219"
+serde_json = "1.0.140"
+sha2 = "0.10.9"
+thiserror = "2.0.12"
+time = "0.3.41"
+tokio = { version = "1.44.2", features = ["full"] }
 trauma = "2.2.6"
+urlencoding = "2.1.3"
+uuid = { version = "1.16.0", features = ["v4"] }
