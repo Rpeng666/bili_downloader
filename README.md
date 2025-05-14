@@ -41,8 +41,8 @@
 ## 🔧 编译
 
 ```bash
-git clone https://github.com/rpeng666/bilidl
-cd bilidl
+git clone https://github.com/Rpeng666/bili_downloader
+cd bili_downloader
 cargo build --release
 ```
 
