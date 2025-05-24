@@ -2,6 +2,8 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust Version](https://img.shields.io/badge/rust-1.75%2B-orange.svg)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/Rpeng666/bili_downloader)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Rpeng666/bili_downloader/release.yml)
 
 🚀 一个使用Rust编写的哔哩哔哩视频命令行下载器。
 
@@ -66,6 +68,18 @@ BiliDL --login --user-dir "./config"
 # 之后可以直接使用保存的登录状态
 BiliDL --url "https://www.bilibili.com/video/BVxxxxxx" --user-dir "./config" --quality 116
 ```
+
+## 📥 快速开始
+
+### 下载预编译版本
+
+访问 [Releases](https://github.com/Rpeng666/bili_downloader/releases) 页面，下载适合您系统的最新版本：
+
+- Windows: `BiliDL-Windows-x86_64.zip`
+- Linux: `BiliDL-Linux-x86_64.tar.gz`
+- macOS: `BiliDL-macOS-x86_64.tar.gz`
+
+### 从源码安装
 
 ## 🔧 安装与编译
 

@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+  build-release:
+    name: Build Release - ${{ matrix.platform.os_name }}
+    needs: create-release
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      matrix:
+        platform:
+          - os_name: Windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: BiliDL.exe
+            
+          - os_name: Linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: bilidl
+
+          - os_name: macOS-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bin: bilidl
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.platform.target }}
+          override: true
+      
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Build Release Binary
+        run: |
+          cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Prepare Release Archive
+        shell: bash
+        run: |
+          mkdir release
+          cp target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }} release/
+          cp README.md release/
+          cp LICENSE release/ || true
+          
+          cd release
+          if [[ "${{ matrix.platform.os }}" == "windows-latest" ]]; then
+            7z a ../BiliDL-${{ matrix.platform.os_name }}.zip *
+          else
+            tar czf ../BiliDL-${{ matrix.platform.os_name }}.tar.gz *
+          fi
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: BiliDL-${{ matrix.platform.os_name }}.${{ matrix.platform.os == 'windows-latest' && 'zip' || 'tar.gz' }}
+          asset_name: BiliDL-${{ matrix.platform.os_name }}.${{ matrix.platform.os == 'windows-latest' && 'zip' || 'tar.gz' }}
+          asset_content_type: application/octet-stream
