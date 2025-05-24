@@ -1,5 +1,5 @@
 use thiserror::Error;
-use std::fmt;
+use std::{fmt, path::PathBuf};
 
 #[derive(Debug)]
 pub enum DownloadError {
@@ -10,6 +10,8 @@ pub enum DownloadError {
     TaskAlreadyExists(String),
     InvalidState(String),
     MergeError(String),
+    FileNotFound(PathBuf),
+    FfmpegNotFound,
     SemaphoreError,
 }
 
@@ -23,6 +25,8 @@ impl fmt::Display for DownloadError {
             DownloadError::TaskAlreadyExists(id) => write!(f, "任务已存在: {}", id),
             DownloadError::InvalidState(msg) => write!(f, "无效的状态: {}", msg),
             DownloadError::SemaphoreError => write!(f, "信号量错误"),
+            DownloadError::FileNotFound(path) => write!(f, "文件未找到: {}", path.display()),
+            DownloadError::FfmpegNotFound => write!(f, "ffmpeg未找到，请安装ffmpeg"),
             DownloadError::MergeError(msg) => write!(f, "合并错误: {}", msg),
         }
     }

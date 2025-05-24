@@ -66,7 +66,7 @@ impl VideoParser {
         let meta = parser.parse(url).await?;
         
         // 保存视频信息
-        if let AnyParser::Common(mut p) = parser {
+        if let AnyParser::Common(p) = parser {
             self.video_info = Some(p.get_video_info().await?);
         }
 

@@ -1,136 +1,105 @@
 use clap::Parser;
 use colored::Colorize;
-use uuid::Uuid;
 use std::path::PathBuf;
+use tracing::{error, info, warn};
+use uuid::Uuid;
 
+mod auth;
 mod cli;
 mod common;
-mod auth;
-mod parser;
 mod downloader;
+mod parser;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// 处理用户认证
+async fn handle_auth(auth_manager: &auth::AuthManager, args: &cli::Cli) -> Result<Uuid> {
+    // 如果提供了cookie，直接使用
+    if let Some(cookie) = &args.cookie {
+        info!("使用提供的cookie进行登录");
+        let id_opt = auth_manager.login_by_cookies(cookie).await?;
+        if let Some(id) = id_opt {
+            return Ok(id);
+        } else {
+            return Err("使用提供的cookie登录失败".into());
+        }
+    }
+
+    // 如果指定了用户目录，尝试从文件加载
+    if let Some(user_dir) = &args.user_dir {
+        info!("尝试从用户目录加载登录状态");
+        if let Ok(Some(id)) = auth_manager
+            .login_by_cookies(&user_dir.to_str().unwrap().to_string())
+            .await
+        {
+            info!("{}: {}", "已登录".green(), id);
+            return Ok(id);
+        }
+        warn!("用户目录中未找到有效的登录信息");
+    }
+
+    // 如果需要登录，执行登录流程
+    if args.login {
+        info!("开始二维码登录流程");
+        let id = auth_manager.qr_login_flow().await?;
+        info!("{}: {}", "登录成功".green(), id);
+        return Ok(id);
+    }
+
+    error!("未提供登录信息，请使用 --login 选项登录");
+    Err("需要登录信息".into())
+}
+
+/// 准备下载环境
+async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
+    // 创建状态文件
+    let state_file = PathBuf::from("state.json");
+    if !state_file.exists() {
+        info!("创建下载状态文件");
+        tokio::fs::write(&state_file, "[]").await?;
+    }
+
+    // 创建输出目录
+    let output_dir = args.output.clone();
+    info!("创建输出目录: {:?}", output_dir);
+    tokio::fs::create_dir_all(&output_dir).await?;
+
+    Ok((state_file, output_dir))
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // 初始化日志
+    tracing_subscriber::fmt::init();
+
+    // 解析命令行参数
     let args = cli::Cli::parse();
-    print!("{}: {}", "正在解析视频信息".green(), args.url);
+    info!("开始下载视频: {}", args.url);
 
+    // 认证处理
     let auth_manager = auth::AuthManager::new();
-    println!("args.user_dir: {:?}", args.user_dir);
-    let mut session_id: Option<Uuid> = None;
-    // 先检查是否有登录状态
-    if args.user_dir.is_some() {
-        // 检查登录状态
-        session_id = auth_manager.login_by_cookies_file(&args.user_dir.as_ref().unwrap()).await?;
-        if session_id.is_some() {
-            println!("{}: {}", "已登录".green(), session_id.unwrap());
-        } else {
-            println!("{}: {}", "未登录".red(), "请使用 --login 选项登录");
-            return Ok(());
-        }
-    }
-    if args.login {
-        // 先登录
-        let session_id = auth_manager.qr_login_flow().await?;
-        println!("登录成功，session_id: {}", session_id);
-    }
+    let session_id = handle_auth(&auth_manager, &args).await?;
+    let client = auth_manager.get_authed_client(session_id).await?;
 
-    let is_login: bool = session_id.is_some();
-
-    let client = auth_manager.get_authed_client(session_id.unwrap()).await?;
-
-    let mut parser = parser::VideoParser::new(client, is_login);
-
-    // 获取元数据
+    // 解析视频信息
+    info!("开始解析视频信息");
+    let mut parser = parser::VideoParser::new(client, true);
     let meta = parser.parse(&args.url).await?;
-    println!("视频标题: {}", meta.title);
+    info!("视频标题: {}", meta.title);
 
-    // 获取视频信息
-    let video_info = parser.get_video_info().ok_or("无法获取视频信息")?;
-    
-    // 创建下载管理器
-    let state_file = PathBuf::from("state.json");
-    if !state_file.exists() {
-        tokio::fs::write(&state_file, "[]").await?;
-    }
-    let download_manager = downloader::manager::DownloadManager::new(4, state_file);
-    
-    // 创建输出目录
-    let output_dir = PathBuf::from(&args.output);
-    tokio::fs::create_dir_all(&output_dir).await?;
+    let video_info = parser.get_video_info().ok_or_else(|| {
+        error!("无法获取视频信息");
+        "无法获取视频信息"
+    })?;
 
-    // 根据流类型选择下载方式
-    match video_info.stream_type {
-        parser::models::StreamType::Dash => {
-            println!("开始下载 DASH 流视频... {:?}", video_info.video_url);
-            
-            // 下载视频流
-            let video_task_id = download_manager.add_task(
-                &video_info.video_url,
-                &output_dir.join(format!("{}_video.mp4", video_info.bvid))
-            ).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            
-            println!("开始下载视频流: {}", video_info.audio_url);
-            // 下载音频流
-            let audio_task_id = download_manager.add_task(
-                &video_info.audio_url,
-                &output_dir.join(format!("{}_audio.m4a", video_info.bvid))
-            ).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    // 准备下载环境
+    let (state_file, output_dir) = prepare_download_env(&args).await?;
 
-            println!("正在下载视频和音频流...");
-            
-            // 等待下载完成
-            loop {
-                let video_status = download_manager.get_task_status(&video_task_id).await;
-                let audio_status = download_manager.get_task_status(&audio_task_id).await;
-                
-                if video_status == Some(downloader::task::TaskStatus::Completed) 
-                    && audio_status == Some(downloader::task::TaskStatus::Completed) {
-                    break;
-                }
-                println!("video_status: {:?}", video_status);
-                println!("audio_status: {:?}", audio_status);
-                println!("等待下载完成...");
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
+    // 开始下载
+    info!("开始下载视频");
+    let downloader = downloader::VideoDownloader::new(4, state_file, output_dir);
+    downloader.download(&video_info).await?;
 
-            println!("开始合并视频和音频...");
-            
-            // 合并视频和音频
-            let merger = downloader::merger::MediaMerger;
-            merger.merge_av(
-                &output_dir.join(format!("{}_video.mp4", video_info.bvid)),
-                &output_dir.join(format!("{}_audio.m4a", video_info.bvid)),
-                &output_dir.join(format!("{}.mp4", video_info.title))
-            ).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-
-            println!("下载完成！");
-        },
-        parser::models::StreamType::Flv => {
-            println!("开始下载 FLV 视频...");
-            
-            // 直接下载 FLV 文件
-            let task_id = download_manager.add_task(
-                &video_info.video_url,
-                &output_dir.join(format!("{}.flv", video_info.title))
-            ).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-
-            println!("正在下载视频...");
-            
-            // 等待下载完成
-            loop {
-                let status = download_manager.get_task_status(&task_id).await;
-                if status == Some(downloader::task::TaskStatus::Completed) {
-                    break;
-                }
-                println!("等待下载完成...");
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
-
-            println!("下载完成！");
-        }
-    }
-
+    info!("{}", "下载完成！".green());
     Ok(())
 }

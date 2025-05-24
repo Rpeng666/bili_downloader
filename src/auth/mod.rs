@@ -65,7 +65,7 @@ impl AuthManager {
         
     }
 
-    pub async fn login_by_cookies_file(&self, path: & String) -> Result<Option<Uuid>, Error> {
+    pub async fn login_by_cookies(&self, path: & String) -> Result<Option<Uuid>, Error> {
         // 通过读取文件来检查登录状态
         let mut new_client = BiliClient::new();
         new_client.load_cookies_from_local(path.as_str()).await;

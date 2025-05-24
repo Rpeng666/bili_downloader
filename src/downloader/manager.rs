@@ -188,6 +188,9 @@ async fn get_remote_file_size(url: &str) -> Result<u64, DownloadError> {
     let client = reqwest::Client::new();
     let resp = client.head(url).send().await?;
     
+    // 打印响应头
+    println!("Response Headers: {:?}", resp.headers());
+    
     resp.headers()
         .get(reqwest::header::CONTENT_LENGTH)
         .and_then(|ct_len| ct_len.to_str().ok())

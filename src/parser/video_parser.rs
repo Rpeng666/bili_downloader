@@ -28,10 +28,10 @@ impl<'a> Parser for CommonVideoParser<'a> {
         self.video_info.url = url.to_string();
 
         // 获取视频信息
-        self.get_video_info().await?;
+        self.__get_video_info().await?;
 
         // 获取媒体信息
-        self.get_video_available_media_info().await?;
+        self.__get_video_available_media_info().await?;
         
         // 返回视频元数据
         Ok(VideoMeta {
@@ -110,7 +110,7 @@ impl<'a> CommonVideoParser<'a> {
     }
 
     // 获取视频信息
-    pub async fn get_video_info(&mut self) -> Result<VideoInfo, ParseError> {
+    pub async fn __get_video_info(&mut self) -> Result<VideoInfo, ParseError> {
         let params = HashMap::from([
             ("bvid".to_string(), self.video_info.bvid.clone())
         ]);
@@ -120,7 +120,10 @@ impl<'a> CommonVideoParser<'a> {
             params
         ).await?;
 
+        // println!("resp get video info: {:?}", resp);
         if resp.code != 0 {
+            // debug
+            println!("resp get video info: {:?}", resp);
             return Err(ParseError::ApiError(resp.message));
         }
         // println!("resp get video info: {:?}", resp);
@@ -145,7 +148,7 @@ impl<'a> CommonVideoParser<'a> {
     }
 
     // 获取媒体信息
-    async fn get_video_available_media_info(&mut self) -> Result<(), ParseError> {
+    async fn __get_video_available_media_info(&mut self) -> Result<(), ParseError> {
         let params = HashMap::from([
             ("bvid".to_string(), self.video_info.bvid.clone()),
             ("cid".to_string(), self.video_info.cid.to_string()),
@@ -167,12 +170,24 @@ impl<'a> CommonVideoParser<'a> {
 
         if let Some(dash) = download_info.get("dash") {
             self.video_info.stream_type = StreamType::Dash;
+            println!("DASH stream detected");
+            // println!("DASH stream: {:?}", dash);
+
+            // 将dash转换为JSON字符串
+            let dash_str = dash.to_string();
+            println!("DASH stream JSON: {}", dash_str);
+            // 写入到文件
+            std::fs::write("dash.json", dash_str).unwrap();
             
+            // 等待输入，暂停程序
+            // std::io::stdin().read_line(&mut String::new()).unwrap();
+
             // 解析视频流
             if let Some(video) = dash.get("video") {
                 if let Some(video_list) = video.as_array() {
                     // 选择最高质量的视频流
-                    if let Some(best_video) = video_list.iter().max_by_key(|v| {
+                    // 测试的时候，选择最低质量的视频流
+                    if let Some(best_video) = video_list.iter().min_by_key(|v| {
                         v.get("bandwidth").and_then(|b| b.as_u64()).unwrap_or(0)
                     }) {
                         self.video_info.video_url = best_video.get("baseUrl")
@@ -187,7 +202,8 @@ impl<'a> CommonVideoParser<'a> {
             if let Some(audio) = dash.get("audio") {
                 if let Some(audio_list) = audio.as_array() {
                     // 选择最高质量的音频流
-                    if let Some(best_audio) = audio_list.iter().max_by_key(|a| {
+                    // 测试的时候，选择最低质量的音频流
+                    if let Some(best_audio) = audio_list.iter().min_by_key(|a| {
                         a.get("bandwidth").and_then(|b| b.as_u64()).unwrap_or(0)
                     }) {
                         self.video_info.audio_url = best_audio.get("baseUrl")
@@ -214,6 +230,12 @@ impl<'a> CommonVideoParser<'a> {
 
         Ok(())
     }
+
+    // 获取视频信息
+    pub async fn get_video_info(&self) -> Result<VideoInfo, ParseError> {
+        Ok(self.video_info.clone())
+    }
+    
 
     // 检查 JSON 响应
     fn check_json(&self, resp: &CommonResponse<Value>) -> Result<(), ParseError> {

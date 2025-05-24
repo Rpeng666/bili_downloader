@@ -1,7 +1,11 @@
 /target
+tmp/
+output/
 
+.vscode/
 session
 
 cookies.jsonl
 
 state.json
+dash.json
