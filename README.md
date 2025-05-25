@@ -6,8 +6,9 @@
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Rpeng666/bili_downloader/release.yml)
 
 🚀 一个使用Rust编写的哔哩哔哩视频命令行下载器。
+> 来都来了，不给个star鼓励一下嘛？Thanks♪(･ω･)ﾉ
 
-## ✨ 特性
+## ✨ 特性（画饼成分居多）
 
 - 🔒 **多种登录方式**
   - 二维码扫码登录（自动显示登录二维码）
