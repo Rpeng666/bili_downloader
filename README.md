@@ -52,21 +52,21 @@
 
 1. 简单下载视频：
 ```bash
-BiliDL --url "https://www.bilibili.com/video/BVxxxxxx"
+bilidl --url "https://www.bilibili.com/video/BVxxxxxx"
 ```
 
 2. 指定下载目录和质量：
 ```bash
-BiliDL --url "https://www.bilibili.com/video/BVxxxxxx" --output "D:/Videos" --quality 116
+bilidl --url "https://www.bilibili.com/video/BVxxxxxx" --output "D:/Videos" --quality 116
 ```
 
 3. 使用登录下载高清视频：
 ```bash
 # 首次使用需要登录
-BiliDL --login --user-dir "./config"
+bilidl --login --user-dir "./config"
 
 # 之后可以直接使用保存的登录状态
-BiliDL --url "https://www.bilibili.com/video/BVxxxxxx" --user-dir "./config" --quality 116
+bilidl --url "https://www.bilibili.com/video/BVxxxxxx" --user-dir "./config" --quality 116
 ```
 
 ## 📥 快速开始

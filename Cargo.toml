@@ -2,6 +2,12 @@
 name = "bili_downloader"
 version = "0.1.0"
 edition = "2024"
+description = "一个简单的B站视频下载工具"
+authors = ["rpeng252@gmail.com"]
+
+[[bin]]
+name = "bilidl"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.98"

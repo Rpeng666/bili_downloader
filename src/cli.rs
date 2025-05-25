@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 /// B站视频下载器
 #[derive(Parser, Debug)]
-#[command(name = "BiliDL")]
+#[command(name = "bilidl")]
 #[command(version = "1.0")]
 #[command(author = "rpeng252@gmail.com")]
 #[command(about = "一个简单的B站视频下载工具", long_about = None)]
