@@ -8,7 +8,7 @@
 🚀 一个使用Rust编写的哔哩哔哩视频命令行下载器。
 > 来都来了，不给个star鼓励一下嘛？Thanks♪(･ω･)ﾉ
 
-![](D:\UserData\Vscode\Rust\bili_downloader\docs\image.png)
+![img](D:\UserData\Vscode\Rust\bili_downloader\docs\image.png)
 
 ## ✨ 特性（画饼成分居多）
 
