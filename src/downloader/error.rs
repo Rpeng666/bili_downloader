@@ -11,6 +11,7 @@ pub enum DownloadError {
     InvalidState(String),
     MergeError(String),
     FileNotFound(PathBuf),
+    StreamError(String),
     FfmpegNotFound,
     SemaphoreError,
 }
@@ -28,6 +29,7 @@ impl fmt::Display for DownloadError {
             DownloadError::FileNotFound(path) => write!(f, "文件未找到: {}", path.display()),
             DownloadError::FfmpegNotFound => write!(f, "ffmpeg未找到，请安装ffmpeg"),
             DownloadError::MergeError(msg) => write!(f, "合并错误: {}", msg),
+            DownloadError::StreamError(msg) => write!(f, "流错误: {}", msg),
         }
     }
 }

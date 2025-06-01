@@ -1,28 +1,29 @@
 use std::path::PathBuf;
 
-use manager::DownloadManager;
+use core::DownloadCore;
 use merger::MediaMerger;
 use task::TaskStatus;
 use tokio::time::Duration;
 
+use crate::common::api::client::BiliClient;
 use crate::parser::models::StreamType;
 use crate::Result;
 
-pub mod manager;
+pub mod core;
 pub mod task;
 pub mod error;
 pub mod merger;
 
 
 pub struct VideoDownloader {
-    download_manager: DownloadManager,
+    download_manager: DownloadCore,
     output_dir: PathBuf,
 }
 
 impl VideoDownloader {
-    pub fn new(concurrent_tasks: usize, state_file: PathBuf, output_dir: PathBuf) -> Self {
+    pub fn new(concurrent_tasks: usize, state_file: PathBuf, output_dir: PathBuf, download_client: BiliClient) -> Self {
         Self {
-            download_manager: DownloadManager::new(concurrent_tasks, state_file),
+            download_manager: DownloadCore::new(concurrent_tasks, state_file, &download_client),
             output_dir,
         }
     }

@@ -175,7 +175,7 @@ impl<'a> CommonVideoParser<'a> {
 
             // 将dash转换为JSON字符串
             let dash_str = dash.to_string();
-            println!("DASH stream JSON: {}", dash_str);
+            // println!("DASH stream JSON: {}", dash_str);
             // 写入到文件
             std::fs::write("dash.json", dash_str).unwrap();
             

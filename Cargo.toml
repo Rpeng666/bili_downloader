@@ -20,6 +20,7 @@ cookie_store = "0.21.1"
 dashmap = "6.1.0"
 flate2 = "1.1.1"
 futures = "0.3.31"
+futures-util = "0.3.31"
 hmac = "0.12.1"
 indicatif = "0.17.11"
 itertools = "0.14.0"
@@ -36,6 +37,7 @@ sha2 = "0.10.9"
 thiserror = "2.0.12"
 time = "0.3.41"
 tokio = { version = "1.44.2", features = ["full"] }
+tokio-util = "0.7.15"
 tracing = { version = "0.1.41", features = ["log"] }
 tracing-subscriber = { version = "0.3.19", features = ["fmt"] }
 trauma = "2.2.6"

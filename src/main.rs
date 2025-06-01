@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
 
     // 解析视频信息
     info!("开始解析视频信息");
-    let mut parser = parser::VideoParser::new(client, true);
+    let mut parser = parser::VideoParser::new(client.clone(), true);
     let meta = parser.parse(&args.url).await?;
     info!("视频标题: {}", meta.title);
 
@@ -97,7 +97,7 @@ async fn main() -> Result<()> {
 
     // 开始下载
     info!("开始下载视频");
-    let downloader = downloader::VideoDownloader::new(4, state_file, output_dir);
+    let downloader = downloader::VideoDownloader::new(4, state_file, output_dir, client.clone());
     downloader.download(&video_info).await?;
 
     info!("{}", "下载完成！".green());

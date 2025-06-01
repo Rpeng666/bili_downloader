@@ -11,9 +11,11 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use crate::common::api::models::user_info::{CommonResponse, UserInfoResponse};
 use crate::parser::wbi_utils::WbiUtils;
-use std::io;
 
 use super::error::ApiError;
+
+use tracing::{error, info, warn};
+
 
 // 支持自动携带认证状态的客户端
 #[derive(Debug, Clone)]
@@ -66,7 +68,7 @@ impl BiliClient {
         // 保存Cookie到本地
         // Note: Implement cookie management logic here if needed
         // self.inner.
-        println!("Authenticated method called, but cookie management is not implemented.");
+        info!("Authenticated method called, but cookie management is not implemented.");
 
         // 返回自己
         Self {
@@ -95,11 +97,31 @@ impl BiliClient {
             .send()
             .await
             .map_err(|e| {
-                println!("请求失败: {}", e);
+                error!("请求失败: {}", e);
                 ApiError::InvalidResponse(format!("请求失败: {}", e))
             })?;
 
         Self::handle_response::<T>(resp).await
+    }
+
+    // 处理响应
+    pub async fn get_raw_response(&self, url: &str) -> Result<Response, ApiError> {
+        let cookie = self.get_all_cookies().await;
+        let cookie_str = cookie
+            .iter()
+            .map(|c| format!("{}={}", c["name"].as_str().unwrap(), c["value"].as_str().unwrap()))
+            .collect::<Vec<String>>()
+            .join(";");
+        
+        let resp = self.inner
+            .get(url)
+            .header(COOKIE, cookie_str)
+            .headers(Self::get_default_headers())
+            .send()
+            .await?;
+
+        Ok(resp)
+        
     }
 
     async fn handle_response<T:DeserializeOwned>(
@@ -265,7 +287,7 @@ impl BiliClient {
         let resp = self.get::<CommonResponse<UserInfoResponse>>(personal_url)
             .await
             .map_err(|e| {
-                println!("请求失败: {}", e);
+                error!("请求失败: {}", e);
                 anyhow!("请求失败: {}", e)
             })?;
 

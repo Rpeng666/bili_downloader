@@ -16,7 +16,13 @@ impl MediaMerger {
         }
 
         // 检查ffmpeg是否安装
-        if Command::new("ffmpeg").arg("-version").output().await.is_err() {
+        if Command::new("ffmpeg")
+            .arg("-version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .await
+            .is_err() {
             return Err(DownloadError::FfmpegNotFound);
         }
 
