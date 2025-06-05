@@ -7,7 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  
 jobs:
   build:
     name: Build ${{ matrix.os }}
@@ -19,14 +20,14 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
         include:
           - os: windows-latest
-            artifact_name: bili_downloader.exe
-            asset_name: bili_downloader-windows.exe
+            artifact_name: bilidl.exe
+            asset_name: bilidl-windows.exe
           - os: ubuntu-latest
-            artifact_name: bili_downloader
-            asset_name: bili_downloader-linux
+            artifact_name: bilidl
+            asset_name: bilidl-linux
           - os: macos-latest
-            artifact_name: bili_downloader
-            asset_name: bili_downloader-macos
+            artifact_name: bilidl
+            asset_name: bilidl-macos
 
     steps:
     - uses: actions/checkout@v4
@@ -57,13 +58,13 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: |
         cd target/release
-        copy bili_downloader.exe ${{ matrix.asset_name }}
+        copy bilidl.exe ${{ matrix.asset_name }}
         
     - name: Rename binary (Unix)
       if: matrix.os != 'windows-latest'
       run: |
         cd target/release
-        cp bili_downloader ${{ matrix.asset_name }}
+        cp bilidl ${{ matrix.asset_name }}
         
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
