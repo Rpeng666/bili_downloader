@@ -27,7 +27,7 @@ jobs:
             asset_name: bili_downloader-macos
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Install FFmpeg (Windows)
       if: matrix.os == 'windows-latest'
@@ -46,40 +46,15 @@ jobs:
         brew install ffmpeg
         
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
-        
+      uses: dtolnay/rust-toolchain@stable
+      
     - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release
+      run: cargo build --release
         
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: ${{ matrix.asset_name }}
-        path: target/release/${{ matrix.artifact_name }}
-        
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v3
-      
-    - name: Create Release
       uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: |
-          bili_downloader-windows.exe/bili_downloader.exe
-          bili_downloader-linux/bili_downloader
-          bili_downloader-macos/bili_downloader
-        draft: false
-        prerelease: false
+        files: target/release/${{ matrix.artifact_name }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
