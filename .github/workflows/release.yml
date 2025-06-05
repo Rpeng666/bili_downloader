@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write      # 添加写入权限
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
@@ -50,11 +52,24 @@ jobs:
       
     - name: Build
       run: cargo build --release
+      
+    - name: Rename binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd target/release
+        copy bili_downloader.exe ${{ matrix.asset_name }}
         
-    - name: Upload artifacts
+    - name: Rename binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cd target/release
+        cp bili_downloader ${{ matrix.asset_name }}
+        
+    - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: target/release/${{ matrix.artifact_name }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        files: target/release/${{ matrix.asset_name }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        draft: false
+        prerelease: false
