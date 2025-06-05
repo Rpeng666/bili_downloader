@@ -152,8 +152,8 @@ impl<'a> CommonVideoParser<'a> {
         let params = HashMap::from([
             ("bvid".to_string(), self.video_info.bvid.clone()),
             ("cid".to_string(), self.video_info.cid.to_string()),
-            ("qn".to_string(), "0".to_string()),
-            ("fnval".to_string(), "16".to_string()),
+            ("qn".to_string(), "0".to_string()),        // 清晰度
+            ("fnval".to_string(), "16".to_string()),    // 流格式
             ("fourk".to_string(), "1".to_string()),
         ]);
 

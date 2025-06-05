@@ -468,14 +468,14 @@ impl BiliClient {
 
     // 发送带 WBI 签名的 GET 请求
     pub async fn get_wbi<T: DeserializeOwned>(&self, url: &str, params: HashMap<String, String>) -> Result<T, ApiError> {
-        println!("url: {:?}", url);
-        println!("params: {:?}", params);
+        // println!("url: {:?}", url);
+        // println!("params: {:?}", params);
         // 获取 wbi keys
         let (img_key, sub_key) = self.get_wbi_keys().await?;
-        println!("img_key: {:?}", img_key);
-        println!("sub_key: {:?}", sub_key);
+        // println!("img_key: {:?}", img_key);
+        // println!("sub_key: {:?}", sub_key);
         let signed_url = format!("{}?{}", url, WbiUtils::enc_wbi(params, &img_key, &sub_key));
-        println!("signed_url: {:?}", signed_url);
+        // println!("signed_url: {:?}", signed_url);
         self.get::<T>(&signed_url).await
     }
 

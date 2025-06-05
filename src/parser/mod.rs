@@ -52,10 +52,10 @@ impl VideoParser {
     // 解析入口
     pub async fn parse(&mut self, url: &str) -> Result<VideoMeta, ParseError> {
         // 检测视频类型
-        let video_type = detector::detect_video_type(url);
-        println!("检测到视频类型：{:?}", video_type);
+        let video_type = detector::detect_video_type(url)?;
+        println!("检测到视频类型：{}", video_type);
 
-        let mut parser = match video_type? {
+        let mut parser = match video_type {
             VideoType::CourseChapter(_) => AnyParser::Cheese(CheeseParser),
             VideoType::CommonVideo(_) => AnyParser::Common(CommonVideoParser::new(&self.api_client)),
             VideoType::BangumiEpisode(_) | VideoType::BangumiSeason(_) => AnyParser::Bangumi(BangumiParser),

@@ -1,4 +1,4 @@
-use super::{models::VideoType, errors::ParseError};
+use super::{errors::ParseError, models::VideoType};
 use regex::Regex;
 
 // 支持正则表达式
@@ -15,11 +15,11 @@ pub fn detect_video_type(input: &str) -> Result<VideoType, ParseError> {
 fn parse_url(url: &str) -> Option<VideoType> {
     let url = url.trim();
     let caps = Regex::new(PATTERNS).unwrap().captures(&url);
-    println!("url: {:?}", url);
-    println!("caps111: {:?}", caps);
+    // println!("url: {:?}", url);
+    // println!("caps111: {:?}", caps);
 
     if let Some(caps) = caps {
-        println!("caps222: {:?}", caps);
+        // println!("caps222: {:?}", caps);
         match &caps[0] {
             "cheese" => Some(VideoType::CourseChapter(url.to_string())),
             "av" => Some(VideoType::CommonVideo(url.to_string())),
@@ -38,17 +38,13 @@ fn detect_raw_id(id: &str) -> Result<VideoType, ParseError> {
 
     if id.starts_with("AV") {
         Ok(VideoType::CommonVideo(id))
-    }
-    else if id.starts_with("BV") {
+    } else if id.starts_with("BV") {
         Ok(VideoType::CommonVideo(id))
-    }
-    else if id.starts_with("EP") {
+    } else if id.starts_with("EP") {
         Ok(VideoType::BangumiEpisode(id[2..].to_string()))
-    }
-    else if id.starts_with("SS") {
+    } else if id.starts_with("SS") {
         Ok(VideoType::BangumiSeason(id[2..].to_string()))
-    }
-    else {
+    } else {
         Err(ParseError::UnsupportedFormat)
     }
 }

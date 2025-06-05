@@ -1,11 +1,16 @@
+use super::error::DownloadError;
 use std::path::Path;
 use tokio::process::Command;
-use super::error::DownloadError;
 
-pub struct  MediaMerger;
+pub struct MediaMerger;
 
 impl MediaMerger {
-    pub  async fn merge_av(&self, video_path: &Path, audio_path: &Path, output_path: &Path) -> Result<(), DownloadError> {
+    pub async fn merge_av(
+        &self,
+        video_path: &Path,
+        audio_path: &Path,
+        output_path: &Path,
+    ) -> Result<(), DownloadError> {
         // 检查输入文件是否存在
         if !video_path.exists() {
             return Err(DownloadError::FileNotFound(video_path.to_path_buf()));
@@ -18,16 +23,18 @@ impl MediaMerger {
         // 检查ffmpeg是否安装
         if Command::new("ffmpeg")
             .arg("-version")
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .output()
+            .status()
             .await
-            .is_err() {
+            .is_err()
+        {
             return Err(DownloadError::FfmpegNotFound);
         }
 
         // 使用ffmpeg命令行工具合并视频和音频
-        let status = Command::new("ffmpeg")
+        let output = Command::new("ffmpeg")
             .arg("-i")
             .arg(video_path)
             .arg("-i")
@@ -36,15 +43,19 @@ impl MediaMerger {
             .arg("copy")
             .arg("-c:a")
             .arg("aac")
+            .arg("-y") // 自动覆盖输出文件（可选）
             .arg(output_path)
-            .status()
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null()) // 屏蔽 stdout
+            .stderr(std::process::Stdio::piped()) // 捕获 stderr 日志
+            .output()
             .await?;
 
-        if status.success() {
-            Ok(())
-        } else {
-            Err(DownloadError::MergeError("Failed to merge video and audio".to_string()))
+        if !output.status.success() {
+            let err_msg = String::from_utf8_lossy(&output.stderr);
+            eprintln!("ffmpeg 执行失败，日志如下：\n{}", err_msg);
+            return Err(DownloadError::FfmpegError(err_msg.to_string()));
         }
-        
+        Ok(())
     }
 }
