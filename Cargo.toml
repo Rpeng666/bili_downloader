@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.98"
+async-trait = "0.1.88"
 bincode = { version = "2.0.1", features = ["serde"] }
 chrono = "0.4.41"
 clap = { version = "4.5.37", features = ["derive"] }
@@ -24,6 +25,7 @@ futures-util = "0.3.31"
 hmac = "0.12.1"
 indicatif = "0.17.11"
 itertools = "0.14.0"
+lazy_static = "1.5.0"
 md-5 = "0.10.6"
 qrcode = "0.14.1"
 rand = "0.9.1"
@@ -33,6 +35,7 @@ reqwest_cookie_store = "0.8.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_derive = "1.0.219"
 serde_json = "1.0.140"
+serde_urlencoded = "0.7.1"
 sha2 = "0.10.9"
 thiserror = "2.0.12"
 time = "0.3.41"
@@ -41,5 +44,6 @@ tokio-util = "0.7.15"
 tracing = { version = "0.1.41", features = ["log"] }
 tracing-subscriber = { version = "0.3.19", features = ["fmt"] }
 trauma = "2.2.6"
+url = "2.5.4"
 urlencoding = "2.1.3"
 uuid = { version = "1.16.0", features = ["v4"] }

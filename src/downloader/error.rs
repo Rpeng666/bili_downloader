@@ -1,19 +1,30 @@
-use thiserror::Error;
 use std::{fmt, path::PathBuf};
 
 #[derive(Debug)]
 pub enum DownloadError {
+    /// HTTP错误
     HttpError(reqwest::Error),
+    /// IO错误
     IoError(std::io::Error),
+    /// 无效的URL错误
     InvalidUrl(String),
+    /// 任务未找到错误
     TaskNotFound(String),
+    /// 任务已存在错误
     TaskAlreadyExists(String),
+    /// 无效状态错误
     InvalidState(String),
+    /// 合并错误
     MergeError(String),
+    /// 文件未找到错误
     FileNotFound(PathBuf),
+    /// 流错误
     StreamError(String),
+    /// ffmpeg执行错误
     FfmpegError(String),
+    /// ffmpeg未找到
     FfmpegNotFound,
+    /// 信号量错误
     SemaphoreError,
 }
 

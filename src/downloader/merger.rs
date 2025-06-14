@@ -1,6 +1,7 @@
 use super::error::DownloadError;
 use std::path::Path;
 use tokio::process::Command;
+use tracing::error;
 
 pub struct MediaMerger;
 
@@ -53,7 +54,7 @@ impl MediaMerger {
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
-            eprintln!("ffmpeg 执行失败，日志如下：\n{}", err_msg);
+            error!("ffmpeg 执行失败，日志如下：\n{}", err_msg);
             return Err(DownloadError::FfmpegError(err_msg.to_string()));
         }
         Ok(())

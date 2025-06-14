@@ -1,79 +1,76 @@
+use crate::{
+    common::{client::client::BiliClient},
+    parser::detail_parser::{get_parser},
+};
 use errors::ParseError;
-use models::{QualityOption, VideoMeta, VideoSegment, VideoType, VideoInfo};
-use parser_trait::Parser;
+use models::{ParsedMeta, UrlType};
+use tracing::debug;
 
-use crate::common::api::client::BiliClient;
-
-pub mod detector;
+pub mod detail_parser;
 pub mod errors;
 pub mod models;
-pub mod parser_trait;
-pub mod cheese_parser;
-use cheese_parser::CheeseParser;
-pub mod bangumi_parser;
-use bangumi_parser::BangumiParser;
-pub mod video_parser;
-use video_parser::CommonVideoParser;
-pub mod wbi_utils;
-pub mod utils;
+pub mod url_parser;
 
-enum AnyParser<'a> {
-    Cheese(CheeseParser),
-    Common(CommonVideoParser<'a>),  
-    Bangumi(BangumiParser),
-}
-
-impl<'a> Parser for AnyParser<'a> {
-    async fn parse(&mut self, url: &str) -> Result<VideoMeta, ParseError> {
-        match self {
-            AnyParser::Cheese(p) => p.parse(url).await,
-            AnyParser::Common(p) => p.parse(url).await,
-            AnyParser::Bangumi(p) => p.parse(url).await,
-        }
-    }
-}
-
+/// 主视频解析器，负责协调整个解析过程
 pub struct VideoParser {
     api_client: BiliClient,
     authenticated: bool,
-    video_info: Option<VideoInfo>,
+    parsed_meta: Option<ParsedMeta>,
 }
 
 impl VideoParser {
-
     pub fn new(api_client: BiliClient, authenticated: bool) -> Self {
         Self {
             api_client,
             authenticated,
-            video_info: None,
+            parsed_meta: None,
         }
     }
-    
-    // 解析入口
-    pub async fn parse(&mut self, url: &str) -> Result<VideoMeta, ParseError> {
-        // 检测视频类型
-        let video_type = detector::detect_video_type(url)?;
-        println!("检测到视频类型：{}", video_type);
 
-        let mut parser = match video_type {
-            VideoType::CourseChapter(_) => AnyParser::Cheese(CheeseParser),
-            VideoType::CommonVideo(_) => AnyParser::Common(CommonVideoParser::new(&self.api_client)),
-            VideoType::BangumiEpisode(_) | VideoType::BangumiSeason(_) => AnyParser::Bangumi(BangumiParser),
-            _ => return Err(ParseError::UnsupportedType),
-        };
+    /// 解析视频URL，返回视频元数据
+    ///
+    /// # 参数
+    /// - `url`: 视频URL或ID
+    ///
+    /// # 返回值
+    /// - `Result<ParsedMeta, ParseError>`: 解析成功返回视频元数据，失败返回错误
+    pub async fn parse(&mut self, url: &str) -> Result<ParsedMeta, ParseError> {
+        // 1. 解析URL，获取视频类型
+        let url_type = url_parser::UrlParser::new().parse(url).await?;
+        debug!("解析到视频类型: {:?}", url_type);
 
-        // 解析视频
-        let meta = parser.parse(url).await?;
-        
-        // 保存视频信息
-        if let AnyParser::Common(p) = parser {
-            self.video_info = Some(p.get_video_info().await?);
-        }
+        // 2. 根据视频类型选择对应的解析器
+        let mut parser = get_parser(&url_type, &self.api_client)?;
+        debug!("获取到解析器");
 
-        Ok(meta)
+        // 3. 解析视频
+        let parsed_meta = parser.parse(&url_type).await?;
+        self.parsed_meta = Some(parsed_meta.clone());
+
+        Ok(parsed_meta)
     }
 
-    pub fn get_video_info(&self) -> Option<&VideoInfo> {
-        self.video_info.as_ref()
+    /// 检查视频是否需要登录
+    pub fn need_login(&self, url_type: &UrlType) -> bool {
+        url_type.need_login()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[tokio::test]
+    async fn test_parse_common_video() {
+        // 测试普通视频解析
+    }
+
+    #[tokio::test]
+    async fn test_parse_bangumi() {
+        // 测试番剧解析
+    }
+
+    #[tokio::test]
+    async fn test_parse_course() {
+        // 测试课程解析
     }
 }

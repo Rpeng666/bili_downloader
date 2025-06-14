@@ -146,6 +146,7 @@ name = "bili_downloader"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "chrono",
  "clap",
@@ -159,6 +160,7 @@ dependencies = [
  "hmac",
  "indicatif",
  "itertools",
+ "lazy_static",
  "md-5",
  "qrcode",
  "rand 0.9.1",
@@ -168,6 +170,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "serde_urlencoded",
  "sha2",
  "thiserror 2.0.12",
  "time",
@@ -176,6 +179,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "trauma",
+ "url",
  "urlencoding",
  "uuid",
 ]

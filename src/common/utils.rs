@@ -1,39 +1,35 @@
-use serde_json::Value;
-
-use super::models::ParseType;
-
 pub struct FormatTool;
 
 impl FormatTool {
-    // 格式化时长
-    pub fn format_duration(episode: &Value, flag: ParseType) -> String {
-        let duration = match flag {
-            ParseType::Video => {
-                if let Some(arc) = episode.get("arc") {
-                    arc.get("duration").and_then(Value::as_f64).unwrap_or(0.0)
-                } else {
-                    episode.get("duration").and_then(Value::as_f64).unwrap_or(0.0)
-                }
-            }
-            ParseType::Bangumi => {
-                if let Some(dur) = episode.get("duration") {
-                    dur.as_f64().unwrap_or(0.0) / 1000.0
-                } else {
-                    return "--:--".to_string();
-                }
-            }
-        };
+    // // 格式化时长
+    // pub fn format_duration(episode: &Value, flag: ParseType) -> String {
+    //     let duration = match flag {
+    //         ParseType::Video => {
+    //             if let Some(arc) = episode.get("arc") {
+    //                 arc.get("duration").and_then(Value::as_f64).unwrap_or(0.0)
+    //             } else {
+    //                 episode.get("duration").and_then(Value::as_f64).unwrap_or(0.0)
+    //             }
+    //         }
+    //         ParseType::Bangumi => {
+    //             if let Some(dur) = episode.get("duration") {
+    //                 dur.as_f64().unwrap_or(0.0) / 1000.0
+    //             } else {
+    //                 return "--:--".to_string();
+    //             }
+    //         }
+    //     };
 
-        let hours = (duration / 3600.0).floor() as u32;
-        let mins = ((duration - (hours * 3600) as f64) / 60.0).floor() as u32;
-        let secs = (duration - (hours * 3600 + mins * 60) as f64).round() as u32;
+    //     let hours = (duration / 3600.0).floor() as u32;
+    //     let mins = ((duration - (hours * 3600) as f64) / 60.0).floor() as u32;
+    //     let secs = (duration - (hours * 3600 + mins * 60) as f64).round() as u32;
 
-        if hours != 0 {
-            format!("{:02}:{:02}:{:02}", hours, mins, secs)
-        } else {
-            format!("{:02}:{:02}", mins, secs)
-        }
-    }
+    //     if hours != 0 {
+    //         format!("{:02}:{:02}:{:02}", hours, mins, secs)
+    //     } else {
+    //         format!("{:02}:{:02}", mins, secs)
+    //     }
+    // }
 
     // 格式化下载速度
     pub fn format_speed(speed: u64) -> String {

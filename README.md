@@ -5,30 +5,33 @@
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/Rpeng666/bili_downloader)
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Rpeng666/bili_downloader/release.yml)
 
-🚀 一个使用Rust编写的哔哩哔哩视频命令行下载器。
+🚀 一个使用Rust编写的bilibili命令行下载器。极致小巧（<10MB),  开箱即食。
 > 来都来了，不给个star鼓励一下嘛？Thanks♪(･ω･)ﾉ
 
-![img](./docs/image.png)
+![img](./docs/333.png)
 
 ## ✨ 特性（画饼成分居多）
 
 - 🔒 **多种登录方式**
-  - 二维码扫码登录（自动显示登录二维码）
-  - Cookie 文本登录（支持手动输入Cookie）
-  - 本地状态保存（自动记住登录信息）
-
+  - [x] 二维码扫码登录（自动显示登录二维码）
+  - [x] Cookie 文本登录（支持手动输入Cookie）
+  - [x] 本地状态保存（自动记住登录信息）
 - 🚄 **高效下载引擎**
-  - 多线程并发下载（提升下载速度）
-  - 断点续传支持（防止下载中断）
-  - 自动音视频合并（DASH格式）
-  - 实时进度显示（清晰的下载状态）
-
+  - [x] 自动音视频合并（DASH格式）
+  - [x] 实时进度显示（清晰的下载状态）
+  - [ ] 多线程并发下载（提升下载速度）
+  - [ ] 断点续传支持（防止下载中断）
 - 🎯 **智能视频解析**
-  - 支持普通视频和番剧
-  - 支持 DASH 和 FLV 格式
-  - 支持多种清晰度（从 360P 到 4K）
-  - 智能选择最佳下载线路
-
+  - [ ] 支持多种类型
+    - [x] 单个普通视频
+    - [x] 单集番剧
+    - [ ] 整季番剧
+    - [ ] 课程
+    - [ ] 弹幕
+    - [ ] 直播
+  - [x] 支持 DASH 和 MP4 格式
+  - [ ] 支持多种清晰度（从 360P 到 4K）
+  - [ ] 智能选择最佳下载线路
 - 🛠 **人性化设计**
   - 简洁的命令行界面
   - 详细的日志输出
@@ -41,14 +44,14 @@
 用法: BiliDL [选项]
 
 选项：
-    -u, --url <URL>             视频链接 (支持普通视频和番剧)
-    -o, --output <DIR>          视频保存目录 [默认: .]
-    -q, --quality <QUALITY>     视频质量: 116=4K, 80=1080P, 64=720P, 32=480P, 16=360P [默认: 80]
-    -l, --login                 登录B站账号 (需要下载高清视频时使用)
-        --user-dir <DIR>        用户配置目录，用于保存登录状态
-        --cookie <COOKIE>       手动指定Cookie (可选)
-    -h, --help                  显示帮助信息
-    -V, --version              显示版本信息
+    --url <URL>             视频链接 (支持普通视频和番剧)
+    --output <DIR>          视频保存目录 [默认: .]
+    --quality <QUALITY>     视频质量: 116=4K, 80=1080P, 64=720P, 32=480P, 16=360P [默认: 80]
+    --login                 登录B站账号 (需要下载高清视频时使用)
+    --user-dir <DIR>        用户配置目录，用于保存登录状态
+    --cookie <COOKIE>       手动指定Cookie (可选)
+    --help                  显示帮助信息
+    --version              显示版本信息
 ```
 
 ## 💡 使用示例
@@ -125,13 +128,6 @@ cd bili_downloader
 
 # 编译
 cargo build --release
-
-# 运行测试
-cargo test
-
-# 安装（可选）
-cargo install --path .
-
 
 ## ⭐ 支持项目
 

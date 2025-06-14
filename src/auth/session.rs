@@ -1,23 +1,17 @@
+use colored::Colorize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use colored::Colorize;
+use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::common::api::error::ApiError;
+use crate::common::client::error::ApiError;
 
-use super::token::{TokenInfo};
 use super::BiliClient;
+// use super::token::TokenInfo;
 
 #[derive(Debug)]
 pub struct SessionManager {
-    pub sessions: Arc<Mutex<HashMap<Uuid, UserSession>>>, // 使用UUID作为会话ID
-}
-
-#[derive(Debug, Clone)]
-pub struct UserSession {
-    pub session_id: Uuid,
-    pub client: BiliClient,
-    // pub token_keeper: Arc<TokenKeeper>,
+    pub sessions: Arc<Mutex<HashMap<Uuid, BiliClient>>>, // 使用UUID作为会话ID
 }
 
 impl SessionManager {
@@ -28,7 +22,11 @@ impl SessionManager {
     }
 
     // 登录成功之后，创建新的会话
-    pub async fn create_session(&self, session_id: Uuid, client : &BiliClient) -> Result<Uuid, ApiError> {
+    pub async fn create_session(
+        &self,
+        session_id: Uuid,
+        client: &BiliClient,
+    ) -> Result<Uuid, ApiError> {
         // let _ = client.check_qr_login_status().await;
 
         let mut sessions = self.sessions.lock().unwrap();
@@ -36,46 +34,47 @@ impl SessionManager {
             return Err(ApiError::InvalidResponse("会话已存在".to_string()));
         }
         // 创建新的会话
-        println!("{}: {}", "创建会话".green(), session_id);
-        sessions.insert(session_id, UserSession {
-            session_id,
-            client: client.clone(),
-        });
-        
+        info!("{}: {}", "创建会话".green(), session_id);
+        sessions.insert(session_id, client.clone());
+
         // 保存会话到文件
         self.save_session_to_file(session_id, client).await?;
-        println!("{}: {}", "会话已保存".green(), session_id);
+        info!("{}: {}", "会话已保存".green(), session_id);
 
         Ok(session_id)
     }
 
-    pub async fn save_session_to_file(&self, session_id: Uuid, client : &BiliClient) -> Result<(), ApiError> {
+    pub async fn save_session_to_file(
+        &self,
+        session_id: Uuid,
+        client: &BiliClient,
+    ) -> Result<(), ApiError> {
         // 将会话信息保存到文件
         let folder_path = format!("./sessions/{}", session_id);
-        std::fs::create_dir_all(&folder_path).map_err(|e| {
-            ApiError::InvalidResponse(format!("创建目录失败: {}", e))
-        })?;
+        std::fs::create_dir_all(&folder_path)
+            .map_err(|e| ApiError::InvalidResponse(format!("创建目录失败: {}", e)))?;
         let file_path = format!("{}/cookies.jsonl", folder_path);
-        client.save_cookies_to_local(file_path.as_str()).await.map_err(|e| {
-            ApiError::InvalidResponse(format!("保存会话失败: {}", e))
-        })?;
-        println!("{}: {}", "会话已保存".green(), session_id);
+        client
+            .save_cookies_to_local(file_path.as_str())
+            .await
+            .map_err(|e| ApiError::InvalidResponse(format!("保存会话失败: {}", e)))?;
+        info!("{}: {}", "会话已保存".green(), session_id);
         Ok(())
-
     }
-    
+
     // 获取会话中的客户端（自动携带最新令牌）
     pub async fn get_authed_client(&self, session_id: Uuid) -> Result<BiliClient, ApiError> {
         let sessions = match self.sessions.lock() {
             Ok(sessions) => sessions,
             Err(_) => return Err(ApiError::InvalidResponse("会话锁定失败".to_string())),
         };
-            
-        if let Some(session) = sessions.get(&session_id) {
-            let client = session.client.clone();
-            Ok(client)
+
+        if let Some(client) = sessions.get(&session_id) {
+            Ok(client.clone())
         } else {
-            Err(ApiError::InvalidResponse("会话不存在".to_string()))
+            warn!("会话不存在, 使用默认客户端，部分功能可能不可用");
+            // 返回一个未登录的客户端
+            Ok(BiliClient::new())
         }
     }
 
@@ -87,7 +86,6 @@ impl SessionManager {
         } else {
             Err(ApiError::InvalidResponse("会话不存在".to_string()))
         }
-        
     }
 
     // 验证cookie的有效性
@@ -100,19 +98,18 @@ impl SessionManager {
         Ok(0)
     }
 
-    // 获取初始令牌
-    async fn fetch_initial_token(&self, cookie: &str) -> Result<TokenInfo, ApiError> {
-        // let client = BiliClient::authenticated(cookie);
-        // let token_info: TokenInfoResponse = client
-        //     .post("/auth/token", "").await?;
-        
-        // Ok(TokenInfo {
-        //     access_token: token_info.access_token,
-        //     refresh_token: token_info.refresh_token,
-        //     expires_at: SystemTime::now() + Duration::from_secs(token_info.expires_in),
-        // })
+    // // 获取初始令牌
+    // async fn fetch_initial_token(&self, cookie: &str) -> Result<TokenInfo, ApiError> {
+    //     // let client = BiliClient::authenticated(cookie);
+    //     // let token_info: TokenInfoResponse = client
+    //     //     .post("/auth/token", "").await?;
 
-        Err(ApiError::InvalidResponse("获取初始令牌失败".to_string()))
-    }
+    //     // Ok(TokenInfo {
+    //     //     access_token: token_info.access_token,
+    //     //     refresh_token: token_info.refresh_token,
+    //     //     expires_at: SystemTime::now() + Duration::from_secs(token_info.expires_in),
+    //     // })
 
+    //     Err(ApiError::InvalidResponse("获取初始令牌失败".to_string()))
+    // }
 }

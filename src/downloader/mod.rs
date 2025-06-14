@@ -1,18 +1,25 @@
 use std::path::PathBuf;
 
 use core::DownloadCore;
-use merger::MediaMerger;
-use task::TaskStatus;
 use tokio::time::Duration;
+use tracing::{debug, info};
 
 use crate::Result;
-use crate::common::api::client::BiliClient;
-use crate::parser::models::StreamType;
+use crate::common::client::client::BiliClient;
+use crate::downloader::models::{DownloadItem, DownloadTask, TaskStatus};
 
 pub mod core;
 pub mod error;
 pub mod merger;
-pub mod task;
+pub mod models;
+
+// 定义一个特征来获取视频信息
+pub trait HasVideoInfo {
+    fn get_bvid(&self) -> &str;
+    fn get_title(&self) -> &str;
+    fn get_video_url(&self) -> &str;
+    fn get_audio_url(&self) -> &str;
+}
 
 pub struct VideoDownloader {
     download_manager: DownloadCore,
@@ -32,67 +39,73 @@ impl VideoDownloader {
         }
     }
 
-    pub async fn download(&self, video_info: &crate::parser::models::VideoInfo) -> Result<()> {
-        match video_info.stream_type {
-            StreamType::Dash => self.download_dash(video_info).await,
-            StreamType::Flv => self.download_flv(video_info).await,
+    pub async fn download(&self, task: &mut DownloadTask) -> Result<()> {
+        debug!("task: {:?}", task);
+
+        for task_item in &mut task.items {
+            match task_item {
+                DownloadItem::Video {
+                    url,
+                    name,
+                    desc,
+                    status,
+                    output_path,
+                } => {
+                    self.download_file(
+                        url.clone(),
+                        name.clone(),
+                        desc.clone(),
+                        output_path.clone(),
+                    )
+                    .await?;
+                    *status = TaskStatus::Completed;
+                }
+                DownloadItem::Audio {
+                    url,
+                    name,
+                    desc,
+                    status,
+                    output_path,
+                } => {
+                    self.download_file(
+                        url.clone(),
+                        name.clone(),
+                        desc.clone(),
+                        output_path.clone(),
+                    )
+                    .await?;
+                    *status = TaskStatus::Completed;
+                }
+                _ => {
+                    return Err("不支持的下载项类型".into());
+                }
+            }
         }
-    }
-
-    async fn download_dash(&self, video_info: &crate::parser::models::VideoInfo) -> Result<()> {
-        println!("开始下载 ... ");
-
-        // 创建临时目录
-        let tmp_dir = self.output_dir.join("tmp");
-        tokio::fs::create_dir_all(&tmp_dir).await?;
-        let output_dir = self.output_dir.join("output");
-        tokio::fs::create_dir_all(&output_dir).await?;
-
-        // 下载视频流
-        println!("------------------------------------------------------");
-        // println!("开始下载视频流: {}", video_info.video_url);
-        println!("开始下载视频流");
-        let video_path = self
-            .output_dir
-            .join(format!("tmp/{}_video.mp4", video_info.bvid));
-        self.download_file(&video_info.video_url, &video_path)
-            .await?;
-
-        // 下载音频流
-        println!("------------------------------------------------------");
-        // println!("开始下载音频流: {}", video_info.audio_url);
-        println!("开始下载音频流");
-        let audio_path = self
-            .output_dir
-            .join(format!("tmp/{}_audio.m4a", video_info.bvid));
-        self.download_file(&video_info.audio_url, &audio_path)
-            .await?;
-
-        // 合并视频和音频
-        println!("------------------------------------------------------");
-        println!("开始合并视频和音频...");
-        let output_path = self
-            .output_dir
-            .join(format!("output/{}.mp4", video_info.title));
-        let merger = MediaMerger;
-        merger
-            .merge_av(&video_path, &audio_path, &output_path)
-            .await?;
-
-        println!("下载完成！");
         Ok(())
     }
 
-    async fn download_flv(&self, video_info: &crate::parser::models::VideoInfo) -> Result<()> {
-        println!("开始下载 FLV 视频...");
-        let output_path = self.output_dir.join(format!("{}.flv", video_info.title));
-        self.download_file(&video_info.video_url, &output_path)
-            .await?;
-        println!("下载完成！");
+    async fn download_file(
+        &self,
+        url: String,
+        name: String,
+        desc: String,
+        output_path: String,
+    ) -> Result<()> {
+        info!("------------------------------------------------------");
+        info!("开始下载 {} {} ... ", name, desc);
+
+        let download_file_path = self.output_dir.join(output_path);
+        // 确保输出目录存在
+        if let Some(parent) = download_file_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        self.start_download(&url, &download_file_path).await?;
+
+        info!("下载完成！ {}", name);
         Ok(())
     }
 
-    async fn download_file(&self, url: &str, path: &PathBuf) -> Result<()> {
+    async fn start_download(&self, url: &str, path: &PathBuf) -> Result<()> {
         let task_id = self.download_manager.add_task(url, path).await?;
 
         loop {

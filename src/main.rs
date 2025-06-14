@@ -1,7 +1,7 @@
 use clap::Parser;
 use colored::Colorize;
 use std::path::PathBuf;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, debug};
 use uuid::Uuid;
 
 mod auth;
@@ -46,7 +46,6 @@ async fn handle_auth(auth_manager: &auth::AuthManager, args: &cli::Cli) -> Resul
         return Ok(id);
     }
 
-    error!("未提供登录信息，请使用 --login 选项登录");
     Err("需要登录信息".into())
 }
 
@@ -70,7 +69,9 @@ async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 初始化日志
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
 
     // 解析命令行参数
     let args = cli::Cli::parse();
@@ -78,28 +79,40 @@ async fn main() -> Result<()> {
 
     // 认证处理
     let auth_manager = auth::AuthManager::new();
-    let session_id = handle_auth(&auth_manager, &args).await?;
+    let mut session_id = Uuid::new_v4(); // 默认会话ID
+
+    if args.login || args.cookie.is_some() || args.user_dir.is_some() {
+        session_id = handle_auth(&auth_manager, &args).await?;
+    } else {
+        warn!("未提供登录信息，可能无法下载受限内容");
+    }
+
     let client = auth_manager.get_authed_client(session_id).await?;
 
     // 解析视频信息
-    info!("开始解析视频信息");
+    info!("开始解析...");
     let mut parser = parser::VideoParser::new(client.clone(), true);
-    let meta = parser.parse(&args.url).await?;
-    info!("视频标题: {}", meta.title);
-
-    let video_info = parser.get_video_info().ok_or_else(|| {
-        error!("无法获取视频信息");
-        "无法获取视频信息"
+    let parsed_meta = parser.parse(&args.url).await.map_err(|e| {
+        error!("解析失败: {}", e);
+        e
     })?;
+    info!("标题: << {} >>", parsed_meta.title);
+    debug!("解析结果: {:?}", parsed_meta);
 
     // 准备下载环境
     let (state_file, output_dir) = prepare_download_env(&args).await?;
 
     // 开始下载
-    info!("开始下载视频");
+    let mut task = parsed_meta.meta.to_download_task().await?;
     let downloader = downloader::VideoDownloader::new(4, state_file, output_dir, client.clone());
-    downloader.download(&video_info).await?;
+    downloader.download(&mut task).await?;
 
+    // 后处理
+    if let Err(e) = parsed_meta.meta.post_handle_download_task(&task).await {
+        error!("后处理失败: {}", e);
+    } else {
+        info!("后处理完成");
+    }
     info!("{}", "下载完成！".green());
     Ok(())
 }

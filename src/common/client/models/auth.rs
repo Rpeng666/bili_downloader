@@ -13,9 +13,13 @@ pub struct LoginStatusResponse {
 #[derive(Debug, Deserialize)]
 pub struct LoginStatusData {
     pub url: String,
+
     pub code: i32,
+
     pub refresh_token: String,
+
     pub timestamp: u64,
+
     pub message: String,
 }
 
@@ -35,18 +39,26 @@ impl LoginStatusResponse {
 #[derive(Debug, Deserialize)]
 pub struct QrLoginData {
     pub url: String,
+
     pub qrcode_key: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct LoginInfo{
     pub url: String,
+
     pub qrcode_key: String,
+
     pub token:String,
+
     pub challenge: String,
+
     pub gt: String,
+
     pub validate: String,
+    
     pub seccode: String,
+
     captcha_key: String,
 }
 
@@ -54,14 +66,19 @@ pub struct LoginInfo{
 #[derive(Debug, Deserialize)]
 pub struct QrStatus {
     pub status: String,
+
     pub message: String,
+
     pub data: Option<LoginInfo>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UserProfile {
     pub mid: u64,
+
     pub name: String,
+
     pub face: String,
+    
     pub sign: String,
 }

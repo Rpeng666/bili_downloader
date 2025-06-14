@@ -1,4 +1,3 @@
-use clap::error;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,13 +30,19 @@ pub enum ApiError {
     Unknown(String),
 
     #[error("B站 API 错误: {1}")]
-    ApiError(i64, String),  // 添加这个类型来处理 B站 API 的错误
+    ApiError(i64, String), // 添加这个类型来处理 B站 API 的错误
 
     #[error("显示错误: {0}")]
     DisplayError(String),
 
     #[error("二维码过期")]
-    QrCodeExpired
+    QrCodeExpired,
+
+    #[error("其他错误: {0}")]
+    Other(String),
+
+    #[error("HTML 解析错误: {0}")]
+    HtmlResponse(String),
 }
 
 impl From<serde_json::Error> for ApiError {
