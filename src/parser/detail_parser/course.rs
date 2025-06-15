@@ -6,7 +6,7 @@ use crate::common::download_type::dash::DashVideoInfo;
 use crate::common::download_type::mp4::Mp4VideoInfo;
 use crate::common::models::DownloadType;
 use crate::parser::detail_parser::Parser;
-use crate::parser::detail_parser::models::PlayUrlResponse;
+use crate::parser::detail_parser::models::PlayUrlData;
 use crate::parser::models::{StreamType, UrlType};
 use crate::parser::{errors::ParseError, models::ParsedMeta};
 use async_trait::async_trait;
@@ -28,7 +28,7 @@ struct CourseInfo {
 
 #[derive(Debug, Deserialize)]
 struct Episode {
-    id: String,
+    id: i64,
     aid: i64,
     cid: i64,
     duration: i32,
@@ -86,14 +86,14 @@ impl<'a> CourseParser<'a> {
     // 获取播放地址
     async fn get_play_url(
         &self,
-        epid: String,
+        epid: i64,
         aid: i64,
         cid: i64,
-    ) -> Result<PlayUrlResponse, ParseError> {
+    ) -> Result<PlayUrlData, ParseError> {
         let params = HashMap::from([
             ("avid".to_string(), aid.to_string()),
             ("cid".to_string(), cid.to_string()),
-            ("ep_id".to_string(), epid),
+            ("ep_id".to_string(), epid.to_string()),
             ("qn".to_string(), "116".to_string()),  // 画质参数
             ("fnver".to_string(), "0".to_string()), // 固定值
             ("fnval".to_string(), "976".to_string()), // 固定值
@@ -102,7 +102,7 @@ impl<'a> CourseParser<'a> {
 
         let resp = self
             .client
-            .get_auto::<CommonResponse<PlayUrlResponse>>(
+            .get_auto::<CommonResponse<PlayUrlData>>(
                 "https://api.bilibili.com/pugv/player/web/playurl",
                 params,
             )
@@ -154,11 +154,7 @@ impl<'a> Parser for CourseParser<'a> {
             )
             .await?;
 
-        let play_info_data = play_info
-            .data
-            .ok_or_else(|| ParseError::ParseError("xx".to_string()))?;
-
-        if let Some(dash_info) = play_info_data.dash {
+        if let Some(dash_info) = play_info.dash {
             // 选择最高质量的视频流和音频流
             let video_stream = dash_info
                 .video
@@ -194,7 +190,7 @@ impl<'a> Parser for CourseParser<'a> {
                 stream_type: StreamType::Dash,
                 meta: DownloadType::CourseChapterDash(video_info),
             })
-        } else if let Some(mp4_info) = play_info_data.durl {
+        } else if let Some(mp4_info) = play_info.durl {
             let mp4_video_stream = mp4_info[0].clone();
 
             let video_info = Mp4VideoInfo {

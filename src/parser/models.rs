@@ -107,7 +107,7 @@ impl Default for StreamType {
 #[derive(Debug, Deserialize)]
 pub struct QualityOption {
     pub codecid: u8,
-    pub quality: u16,
+    pub quality: u64,
     pub format: String,
     pub description: String,
 }
