@@ -2,25 +2,47 @@ use std::collections::HashMap;
 
 use crate::common::client::client::BiliClient;
 use crate::common::client::models::common::CommonResponse;
-use crate::common::download_type::dash::DashVideoInfo;
-use crate::common::download_type::mp4::Mp4VideoInfo;
+use crate::common::download_type::video::{VideoInfo, VideoInfoVec};
 use crate::common::models::DownloadType;
-use crate::parser::detail_parser::models::PlayUrlData;
 use crate::parser::detail_parser::Parser;
-use crate::parser::models::UrlType;
-use crate::parser::{
-    errors::ParseError,
-    models::{ParsedMeta, StreamType},
-};
+use crate::parser::detail_parser::models::PlayUrlData;
+use crate::parser::detail_parser::parser_trait::{ParserOptions, StreamType, parse_episode_range};
+use crate::parser::models::{UrlType, VideoQuality};
+use crate::parser::{ParsedMeta, errors::ParseError};
 use async_trait::async_trait;
 use serde_derive::Deserialize;
 use tracing::debug;
 
+// 番剧单集信息响应
 #[derive(Debug, Deserialize)]
-struct BangumiInfo {
-    title: String, // 番剧标题
+struct BangumiEpResponse {
+    #[serde(rename = "epInfo")]
+    ep_info: Option<EpInfo>,
+    #[serde(rename = "seasonInfo")]
+    season_info: Option<SeasonInfo>,
+}
 
-    total: u32, // 总集数
+#[derive(Debug, Deserialize)]
+struct EpInfo {
+    id: u64,       // ep_id
+    aid: i64,      // av号
+    cid: i64,      // 视频cid
+    title: String, // 标题
+    #[serde(rename = "seasonId")]
+    season_id: u64, // 所属番剧的 season_id
+}
+
+#[derive(Debug, Deserialize)]
+struct SeasonInfo {
+    #[serde(rename = "seasonId")]
+    season_id: u64, // season_id
+    title: String, // 番剧标题
+}
+
+#[derive(Debug, Deserialize)]
+struct BangumiSeasonInfo {
+    title: String, // 番剧标题
+    total: u32,    // 总集数
 
     #[serde(rename = "mediaInfo")]
     media_info: Option<MediaInfo>,
@@ -37,21 +59,23 @@ struct MediaInfo {
 
 #[derive(Debug, Deserialize)]
 struct Episode {
-    id: u64, // ep_id
-
-    aid: i64, // av号
-
-    cid: i64, // 视频cid
-
-    title: String, // 标题
-
-    long_title: String, // 长标题
-
-    duration: u32, // 时长（秒）
-
+    id: u64,               // ep_id
+    aid: i64,              // av号
+    cid: i64,              // 视频cid
+    title: String,         // 标题
+    long_title: String,    // 长标题
+    duration: u32,         // 时长（秒）
     badge: Option<String>, // 标记（会员专享等）
+    cover: String,         // 封面图
+}
 
-    cover: String, // 封面图
+#[derive(Debug, Deserialize)]
+pub struct BangumiInfo {
+    title: String, // 番剧标题
+    #[serde(rename = "mediaInfo")]
+    media_info: Option<MediaInfo>, // 媒体信息
+    episodes: Vec<Episode>, // 集数列表
+    total: u32,    // 总集数
 }
 
 pub struct BangumiParser<'a> {
@@ -63,9 +87,14 @@ impl<'a> BangumiParser<'a> {
         Self { client }
     }
 
-    // 获取番剧信息
-    async fn get_bangumi_info(&self, ep_id: &str) -> Result<BangumiInfo, ParseError> {
-        let params = HashMap::from([("ep_id".to_string(), ep_id.to_string())]);
+    // 根据 season_id 获取番剧信息
+    async fn get_season_info(&self, season_id: Option<&str>, ep_id: Option<&str>) -> Result<BangumiInfo, ParseError> {
+        let params =  match (season_id, ep_id) {
+            (Some(sid), None) => HashMap::from([("season_id".to_string(), sid.to_string())]),
+            (None, Some(eid)) => HashMap::from([("ep_id".to_string(), eid.to_string())]),
+            _ => return Err(ParseError::ParseError("必须提供 season_id 或 ep_id".to_string())),
+        };
+
         let resp = self
             .client
             .get_auto::<CommonResponse<BangumiInfo>>(
@@ -75,23 +104,24 @@ impl<'a> BangumiParser<'a> {
             .await
             .map_err(|e| ParseError::NetworkError(e.to_string()))?;
 
-        debug!("获取到的番剧信息000");
+        debug!("获取到的番剧信息: {:?}", resp);
 
-        let bangumi_info = resp
-            .result
-            .ok_or_else(|| ParseError::ParseError("未找到番剧信息".to_string()))?;
-
-        debug!("获取到的番剧信息111");
-        Ok(bangumi_info)
+        resp.result
+            .ok_or_else(|| ParseError::ParseError("未找到番剧信息".to_string()))
     }
 
     // 获取播放地址
-    async fn get_play_url(&self, ep_id: &str, cid: i64) -> Result<PlayUrlData, ParseError> {
+    async fn get_play_url(
+        &self,
+        ep_id: &str,
+        cid: i64,
+        quality: VideoQuality,
+    ) -> Result<PlayUrlData, ParseError> {
         let params = HashMap::from([
             ("ep_id".to_string(), ep_id.to_string()),
             ("cid".to_string(), cid.to_string()),
-            ("qn".to_string(), "112".to_string()), // 选择合适的清晰度
-            ("fnval".to_string(), "16".to_string()), // 启用 DASH
+            ("qn".to_string(), (quality as i32).to_string()),
+            ("fnval".to_string(), "976".to_string()),
             ("fnver".to_string(), "0".to_string()),
             ("fourk".to_string(), "1".to_string()),
         ]);
@@ -105,112 +135,250 @@ impl<'a> BangumiParser<'a> {
             .await
             .map_err(|e| ParseError::NetworkError(e.to_string()))?;
 
-        // debug!("get_play_url: {:?}", resp);
-
-        // 解析播放地址信息
         resp.result
             .ok_or_else(|| ParseError::ParseError("未找到播放地址信息".to_string()))
     }
-}
 
-#[async_trait]
-impl<'a> Parser for BangumiParser<'a> {
-    async fn parse(&mut self, url_type: &UrlType) -> Result<ParsedMeta, ParseError> {
-        // 1. 从URL中提取ep_id
-        let url_info = match url_type {
-            UrlType::BangumiEpisode(url_info) => url_info,
-            _ => return Err(ParseError::InvalidUrl),
-        };
-        let id = url_info;
-        debug!("提取到的ep_id: {}", id);
+    // 创建单集视频的元数据
+    async fn create_episode_meta(
+        &self,
+        episode: &Episode,
+        quality: VideoQuality,
+    ) -> Result<ParsedMeta, ParseError> {
+        let play_info = self
+            .get_play_url(&episode.id.to_string(), episode.cid, quality)
+            .await?;
 
-        // 2. 获取番剧信息
-        let info = self.get_bangumi_info(id).await?;
-        debug!("获取到的番剧信息: {:?}", info);
-
-        // Store the duration before moving episodes
-        let duration = info.episodes.first().map(|ep| ep.duration).unwrap_or(0);
-
-        // 4. 获取当前分集的播放地址
-        let ep_id_u64 = id
-            .parse::<u64>()
-            .map_err(|_| ParseError::ParseError("ep_id 解析失败".to_string()))?;
-        let current_ep = info
-            .episodes
-            .iter()
-            .find(|seg| seg.id == ep_id_u64)
-            .ok_or_else(|| ParseError::ParseError("未找到指定分集".to_string()))?;
-
-        debug!("当前分集信息: {:?}", current_ep);
-
-        let play_info = self.get_play_url(&id, current_ep.cid).await?;
-
-        debug!("play_info: {:?}", play_info);
-
-        // 选择最高质量的视频和音频流
         if let Some(dash_info) = play_info.dash {
             let video_stream = dash_info
                 .video
                 .iter()
-                .max_by_key(|v| v.quality)
-                .ok_or_else(|| ParseError::ParseError("未找到可用的视频流".to_string()))?;
+                .max_by_key(|v| v.bandwidth)
+                .cloned()
+                .ok_or_else(|| ParseError::ParseError("未找到所选质量的视频流".to_string()))?;
 
             let audio_stream = dash_info
                 .audio
                 .iter()
-                .max_by_key(|a| a.quality)
+                .max_by_key(|a| a.bandwidth)
+                .cloned()
                 .ok_or_else(|| ParseError::ParseError("未找到可用的音频流".to_string()))?;
 
-            // 构建视频信息
-            let video_info = DashVideoInfo {
-                url: "https://www.bilibili.com/bangumi/play/".to_string() + &id,
-                aid: current_ep.aid,
-                bvid: format!("ep{}", ep_id_u64),
-                cid: current_ep.cid,
-                title: current_ep.title.clone(),
-                cover: current_ep.cover.clone(),
-                desc: info
-                    .media_info
-                    .as_ref()
-                    .map_or(String::new(), |m| m.type_name.clone()),
+            let video_info = VideoInfo {
+                url: format!("https://www.bilibili.com/bangumi/play/ep{}", episode.id),
+                aid: episode.aid,
+                bvid: format!("ep{}", episode.id),
+                cid: episode.cid,
+                title: if episode.long_title.is_empty() {
+                    episode.title.clone()
+                } else {
+                    format!("{} - {}", episode.title, episode.long_title)
+                },
+                cover: episode.cover.clone(),
+                desc: String::new(),
                 views: String::new(),
                 danmakus: String::new(),
                 up_name: String::new(),
                 up_mid: 0,
-                video_quality_id_list: vec![video_stream.quality as i32],
-                video_url: video_stream.base_url.clone(),
-                audio_url: audio_stream.base_url.clone(),
-            };
-            return Ok(ParsedMeta {
-                title: current_ep.title.clone(),
                 stream_type: StreamType::Dash,
-                meta: DownloadType::BangumiEpisode(video_info),
-            });
-        } else if let Some(mp4_info) = play_info.durl {
-            let mp4_video_stream = mp4_info[0].clone();
+                video_quality_id_list: play_info.accept_quality,
+                video_url: Some(video_stream.base_url.clone()),
+                audio_url: Some(audio_stream.base_url.clone()),
+                mp4_url: None, // DASH 不需要 MP4 流
+            };
 
-            let video_info = Mp4VideoInfo {
-                url: "https://www.bilibili.com/bangumi/play/".to_string() + &id, // 使用课程的URL作为基础
-                aid: current_ep.aid.clone(),                             // 使用真实的 aid
-                bvid: format!("cheese_{}", ep_id_u64), // 使用课程 ep_id 作为标识
-                cid: current_ep.cid,
-                title: current_ep.title.clone(),
-                cover: current_ep.cover.clone(), // 使用课程封面
-                desc: "".to_string(),
+            let video_info_vec = VideoInfoVec(vec![video_info.clone()]);
+
+            Ok(ParsedMeta {
+                title: video_info.title.clone(),
+                stream_type: StreamType::Dash,
+                meta: DownloadType::Bangumi(video_info_vec),
+            })
+        } else if let Some(durl) = play_info.durl {
+            // 如果没有 DASH 信息，使用 MP4 流
+            let video_stream = durl
+                .iter()
+                .max_by_key(|d| d.order)
+                .cloned()
+                .ok_or_else(|| ParseError::ParseError("未找到 MP4 流".to_string()))?;
+
+            let video_info = VideoInfo {
+                url: format!("https://www.bilibili.com/bangumi/play/ep{}", episode.id),
+                aid: episode.aid,
+                bvid: format!("ep{}", episode.id),
+                cid: episode.cid,
+                title: if episode.long_title.is_empty() {
+                    episode.title.clone()
+                } else {
+                    format!("{} - {}", episode.title, episode.long_title)
+                },
+                cover: episode.cover.clone(),
+                desc: String::new(),
                 views: String::new(),
                 danmakus: String::new(),
                 up_name: String::new(),
                 up_mid: 0,
-                video_url: mp4_video_stream.url,
+                stream_type: StreamType::Dash, // You may want to use a different StreamType for MP4
+                video_quality_id_list: vec![],
+                video_url: None,
+                audio_url: None,
+                mp4_url: Some(video_stream.url.clone()),
             };
+
+            let video_info_vec = VideoInfoVec(vec![video_info.clone()]);
+
             Ok(ParsedMeta {
-                title: current_ep.title.clone(),
-                stream_type: StreamType::MP4,
-                meta: DownloadType::CourseChapterMp4(video_info),
+                title: video_info.title.clone(),
+                stream_type: StreamType::Dash, // You may want to use a different StreamType for MP4
+                meta: DownloadType::Bangumi(video_info_vec),
             })
         } else {
-            Err(ParseError::ParseError("未解析出下载源地址".to_string()))
+            Err(ParseError::ParseError("未找到播放地址信息".to_string()))
+        }
+    }
+
+    // // 创建季度视频的元数据
+    // async fn create_season_meta(
+    //     &self,
+    //     episode: &Episode,
+    //     bangumi_info: &BangumiInfo,
+    //     quality: VideoQuality,
+    // ) -> Result<ParsedMeta, ParseError> {
+    //     let play_info = self
+    //         .get_play_url(&episode.id.to_string(), episode.cid, quality)
+    //         .await?;
+
+    //     if let Some(dash_info) = play_info.dash {
+    //         let video_stream = dash_info
+    //             .video
+    //             .iter()
+    //             .filter(|v| v.quality <= quality as i32)
+    //             .max_by_key(|v| v.quality)
+    //             .ok_or_else(|| ParseError::ParseError("未找到所选质量的视频流".to_string()))?;
+
+    //         let audio_stream = dash_info
+    //             .audio
+    //             .iter()
+    //             .max_by_key(|a| a.quality)
+    //             .ok_or_else(|| ParseError::ParseError("未找到可用的音频流".to_string()))?;
+
+    //         let video_info = VideoInfo {
+    //             url: format!("https://www.bilibili.com/bangumi/play/ep{}", episode.id),
+    //             aid: episode.aid,
+    //             bvid: format!("ep{}", episode.id),
+    //             cid: episode.cid,
+    //             title: format!("{} - {}", bangumi_info.title, episode.title),
+    //             cover: episode.cover.clone(),
+    //             desc: episode.long_title.clone(),
+    //             views: String::new(),
+    //             danmakus: String::new(),
+    //             up_name: String::new(),
+    //             up_mid: 0,
+    //             video_quality_id_list: vec![video_stream.quality as i32],
+    //             video_url: video_stream.base_url.clone(),
+    //             audio_url: audio_stream.base_url.clone(),
+    //         };
+
+    //         Ok(ParsedMeta {
+    //             title: video_info.title.clone(),
+    //             stream_type: StreamType::Dash,
+    //             meta: DownloadType::BangumiEpisodeDash(video_info),
+    //         })
+    //     } else {
+    //         Err(ParseError::ParseError(
+    //             "未找到 DASH 格式的视频流".to_string(),
+    //         ))
+    //     }
+    // }
+}
+
+#[async_trait]
+impl<'a> Parser for BangumiParser<'a> {
+    async fn parse_with_options(
+        &mut self,
+        url_type: &UrlType,
+        options: ParserOptions,
+    ) -> Result<ParsedMeta, ParseError> {
+        // 确保传入的是番剧选项
+        let (quality, episode_range) = match options {
+            ParserOptions::Bangumi {
+                quality,
+                episode_range,
+            } => (quality, episode_range),
+            _ => return Err(ParseError::ParseError("无效的番剧解析选项".to_string())),
+        };
+
+        match url_type {
+            UrlType::BangumiEpisode(ep_id) => {
+                // 单集下载，直接获取单集信息
+                let bangumi_info = self.get_season_info(None, Some(ep_id)).await?;
+                debug!("番剧 {} 共有 {} 集", bangumi_info.title, bangumi_info.total);
+                let episode = bangumi_info
+                    .episodes
+                    .iter()
+                    .find(|ep| ep.id == (*ep_id).parse::<u64>().unwrap_or(0))
+                    .ok_or_else(|| ParseError::ParseError("未找到指定的番剧集数".to_string()))?;
+                let meta = self.create_episode_meta(&episode, quality).await?;
+                Ok(meta)
+            }
+            // UrlType::BangumiSeason(ss_id) => {
+            //     // 获取番剧信息
+            //     let bangumi_info = self.get_season_info(ss_id).await?;
+            //     debug!("番剧 {} 共有 {} 集", bangumi_info.title, bangumi_info.total);
+
+            //     let episodes_to_download = match episode_range {
+            //         Some(range) => {
+            //             // 解析要下载的集数范围
+            //             let episodes = parse_episode_range(&range)?;
+
+            //             // 验证集数是否有效
+            //             let valid_episodes: Vec<_> = episodes
+            //                 .into_iter()
+            //                 .filter_map(|ep_id| {
+            //                     bangumi_info
+            //                         .episodes
+            //                         .iter()
+            //                         .find(|ep| ep.id as i64 == ep_id)
+            //                 })
+            //                 .collect();
+
+            //             if valid_episodes.is_empty() {
+            //                 return Err(ParseError::ParseError(
+            //                     "指定的集数范围不在番剧集数列表中".to_string(),
+            //                 ));
+            //             }
+
+            //             valid_episodes
+            //         }
+            //         None => {
+            //             // 如果没有指定范围，则下载所有集数
+            //             bangumi_info.episodes.iter().collect()
+            //         }
+            //     };
+
+            //     // 获取所有选定集数的元数据
+            //     let mut download_type = Vec::new();
+            //     for episode in episodes_to_download {
+            //         match self
+            //             .create_season_meta(episode, &bangumi_info, quality)
+            //             .await
+            //         {
+            //             Ok(meta) => download_type.push(meta),
+            //             Err(e) => {
+            //                 debug!("获取第 {} 集信息失败: {:?}", episode.id, e);
+            //                 continue;
+            //             }
+            //         }
+            //     }
+
+            //     let metas = ParsedMeta {
+            //         title: bangumi_info.title.clone(),
+            //         stream_type: StreamType::Dash,
+            //         meta: download_type,
+            //     };
+            //     Ok(metas)
+            // }
+            _ => Err(ParseError::InvalidUrl),
         }
     }
 }
-

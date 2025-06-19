@@ -6,8 +6,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::{
-    common::download_type::{dash::DashVideoInfo, mp4::Mp4VideoInfo},
-    downloader::models::DownloadTask,
+    common::download_type::video::{VideoInfoVec}, downloader::models::DownloadTask,
     parser::errors::ParseError,
 };
 
@@ -22,26 +21,22 @@ pub trait DownloadTaskTrait {
 // 枚举不同的要下载的类型
 #[derive(Debug, Deserialize, Clone)]
 pub enum DownloadType {
-    CommonVideo(DashVideoInfo),       // 普通视频(dash流)
-    BangumiEpisode(DashVideoInfo),    // 番剧EP(dash流)
-    BangumiSeason(DashVideoInfo),     // 番剧季(dash流)
-    CourseChapterDash(DashVideoInfo), // 课程章节(dash流)
-    CourseChapterMp4(Mp4VideoInfo),   // 课程章节(Mp4流)
-                                      // LiveRoom(LiveRoomInfo),      // 直播间
-                                      // Collection(CollectionInfo),  // 合集
-                                      // Favorite(FavoriteInfo),      // 收藏夹
-                                      // UgcSeason(UgcSeasonInfo),    // UP主合集
-                                      // Article(ArticleInfo),        // 专栏
+    CommonVideo(VideoInfoVec), // 普通视频
+    Bangumi(VideoInfoVec),     // 番剧季
+    Course(VideoInfoVec),      // 课程章节
+                               // LiveRoom(LiveRoomInfo),      // 直播间
+                               // Collection(CollectionInfo),  // 合集
+                               // Favorite(FavoriteInfo),      // 收藏夹
+                               // UgcSeason(UgcSeasonInfo),    // UP主合集
+                               // Article(ArticleInfo),        // 专栏
 }
 
 impl DownloadType {
     pub async fn to_download_task(&self) -> Result<DownloadTask, ParseError> {
         match self {
             Self::CommonVideo(v) => return v.to_download_task().await,
-            Self::BangumiEpisode(v) => return v.to_download_task().await,
-            Self::BangumiSeason(v) => return v.to_download_task().await,
-            Self::CourseChapterDash(v) => return v.to_download_task().await,
-            Self::CourseChapterMp4(v) => return v.to_download_task().await,
+            Self::Bangumi(v) => return v.to_download_task().await,
+            Self::Course(v) => return v.to_download_task().await,
         };
         Err(ParseError::ParseError(format!(
             "find type {:?} not implemented",
@@ -52,10 +47,8 @@ impl DownloadType {
     pub async fn post_handle_download_task(&self, task: &DownloadTask) -> Result<(), ParseError> {
         match self {
             Self::CommonVideo(v) => return v.post_handle_download_task(task).await,
-            Self::BangumiEpisode(v) => return v.post_handle_download_task(task).await,
-            Self::BangumiSeason(v) => return v.post_handle_download_task(task).await,
-            Self::CourseChapterDash(v) => return v.post_handle_download_task(task).await,
-            Self::CourseChapterMp4(v) => return v.post_handle_download_task(task).await,
+            Self::Bangumi(v) => return v.post_handle_download_task(task).await,
+            Self::Course(v) => return v.post_handle_download_task(task).await,
         }
 
         Err(ParseError::ParseError(format!(

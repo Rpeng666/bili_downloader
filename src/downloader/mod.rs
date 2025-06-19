@@ -76,6 +76,22 @@ impl VideoDownloader {
                     .await?;
                     *status = TaskStatus::Completed;
                 }
+                DownloadItem::MP4 {
+                    url,
+                    name,
+                    desc,
+                    status,
+                    output_path,
+                } => {
+                    self.download_file(
+                        url.clone(),
+                        name.clone(),
+                        desc.clone(),
+                        output_path.clone(),
+                    )
+                    .await?;
+                    *status = TaskStatus::Completed;
+                }
                 _ => {
                     return Err("不支持的下载项类型".into());
                 }

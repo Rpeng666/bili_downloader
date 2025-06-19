@@ -9,8 +9,7 @@ pub mod client {
     pub mod error;
 }
 pub mod download_type {
-    pub mod dash;
-    pub mod mp4;
+    pub mod video;
 }
 
 pub mod models;

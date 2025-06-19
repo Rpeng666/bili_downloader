@@ -41,4 +41,9 @@ pub struct Cli {
     #[arg(long, value_name = "COOKIE")]
     #[arg(help = "手动指定Cookie")]
     pub cookie: Option<String>,
+
+    /// 集数范围 (可选，仅用于番剧或课程的批量下载)
+    #[arg(long, value_name = "RANGE")]
+    #[arg(help = "指定要下载的集数范围，如: 1-3,5,7-9")]
+    pub parts: Option<String>,
 }

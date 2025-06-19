@@ -1,21 +1,20 @@
 use crate::common::client::client::BiliClient;
 use crate::common::client::models::common::CommonResponse;
 use crate::common::download_type::dash::DashVideoInfo;
+use crate::common::download_type::mp4::Mp4VideoInfo;
 use crate::common::models::DownloadType;
-use crate::parser::detail_parser::Parser;
 use crate::parser::detail_parser::models::PlayUrlData;
+use crate::parser::detail_parser::{Parser, ParserOptions, VideoQuality};
 use crate::parser::errors::ParseError;
-use crate::parser::models::{ParsedMeta, StreamType, UrlType};
+use crate::parser::models::{ParsedMeta, StreamType, UrlType, VideoId};
 
 use async_trait::async_trait;
-use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::debug;
 
 pub struct CommonVideoParser<'a> {
     client: &'a BiliClient,
-    part: Option<String>,
 }
 
 #[async_trait]
@@ -46,181 +45,158 @@ impl<'a> Parser for CommonVideoParser<'a> {
             meta: play_url_info,
         })
     }
+
+    async fn parse_with_options(
+        &mut self,
+        url_type: &UrlType,
+        options: ParserOptions,
+    ) -> Result<ParsedMeta, ParseError> {
+        // 确保传入的是普通视频选项
+        let quality = match options {
+            ParserOptions::CommonVideo { quality } => quality,
+            _ => return Err(ParseError::ParseError("无效的普通视频解析选项".to_string())),
+        };
+
+        match url_type {
+            UrlType::CommonVideo(video_id) => {
+                let video_info = self.get_video_info(video_id).await?;
+                debug!("视频信息: {:?}", video_info);
+                self.create_video_meta(&video_info, quality).await
+            }
+            _ => Err(ParseError::InvalidUrl),
+        }
+    }
 }
 
 impl<'a> CommonVideoParser<'a> {
     pub fn new(client: &'a BiliClient) -> Self {
-        Self { client, part: None }
+        Self { client }
     }
 
-    // 解析分P信息
-    fn get_part(&mut self, url: &str) {
-        let re = Regex::new(r"p=([0-9]+)").unwrap();
-        self.part = re
-            .captures(url)
-            .and_then(|cap| cap.get(1))
-            .and_then(|m| m.as_str().parse().ok());
-    }
+    async fn get_video_info(&self, video_id: &VideoId) -> Result<CommonVideoInfo, ParseError> {
+        let mut params = HashMap::new();
 
-    // 从av号获取bvid
-    fn get_aid(&mut self, url: &str) -> Result<(), ParseError> {
-        let re = Regex::new(r"av([0-9]+)").unwrap();
-        let aid = re
-            .captures(url)
-            .and_then(|cap| cap.get(1))
-            .map(|m| m.as_str())
-            .ok_or(ParseError::InvalidUrl)?;
-
-        let bvid = self.aid_to_bvid(aid.parse()?);
-        self.set_bvid(&bvid)?;
-        Ok(())
-    }
-
-    // 获取BV号
-    fn get_bvid(&mut self, url: &str) -> Result<(), ParseError> {
-        let re = Regex::new(r"BV\w+").unwrap();
-        let bvid = re
-            .find(url)
-            .map(|m| m.as_str())
-            .ok_or(ParseError::InvalidUrl)?;
-
-        self.set_bvid(bvid)?;
-        Ok(())
-    }
-
-    // 设置bvid和url
-    fn set_bvid(&mut self, bvid: &str) -> Result<(String, String), ParseError> {
-        let url = format!("https://www.bilibili.com/video/{}", bvid);
-        Ok((bvid.to_string(), url.clone()))
-    }
-
-    // 获取视频信息
-    pub async fn __get_video_info(&mut self, bvid: String) -> Result<VideoInfo, ParseError> {
-        let params = HashMap::from([("bvid".to_string(), bvid.clone())]);
+        if let Some(bvid) = &video_id.bvid {
+            params.insert("bvid".to_string(), bvid.clone());
+        } else if let Some(aid) = &video_id.aid {
+            params.insert("aid".to_string(), aid.to_string());
+        } else {
+            return Err(ParseError::ParseError("需要提供 bvid 或 aid".to_string()));
+        }
 
         let resp = self
             .client
             .get_auto::<CommonResponse<CommonVideoInfo>>(
-                "https://api.bilibili.com/x/web-interface/wbi/view",
+                "https://api.bilibili.com/x/web-interface/view",
                 params,
             )
-            .await?;
+            .await
+            .map_err(|e| ParseError::NetworkError(e.to_string()))?;
 
-        let mut video_info = VideoInfo::default();
-        let data = resp
-            .data
-            .ok_or_else(|| ParseError::ParseError("未找到数据".to_string()))?;
-
-        if let Some(ref redirect_url) = data.redirect_url {
-            // 处理重定向
-
-            return Err(ParseError::Redirect(redirect_url.clone()));
-        } else {
-            video_info.title = data.title.clone();
-            video_info.cover = data.pic.clone();
-            video_info.desc = data.desc.clone();
-            video_info.up_name = data.owner.name.clone();
-            video_info.up_mid = data.owner.mid.clone();
-            video_info.cid = data.cid.clone();
-            video_info.bvid = data.bvid.clone();
-        }
-
-        Ok(video_info)
+        resp.data
+            .ok_or_else(|| ParseError::ParseError("未找到视频信息".to_string()))
     }
 
-    // 获取媒体信息
-    async fn __get_play_url(&mut self, video_info: &VideoInfo) -> Result<DownloadType, ParseError> {
+    async fn get_play_url(
+        &self,
+        video_info: &CommonVideoInfo,
+        quality: VideoQuality,
+    ) -> Result<PlayUrlData, ParseError> {
         let params = HashMap::from([
             ("bvid".to_string(), video_info.bvid.clone()),
             ("cid".to_string(), video_info.cid.to_string()),
-            ("qn".to_string(), "0".to_string()), // 0表示自动选择清晰度
-            ("fnver".to_string(), "0".to_string()), // 版本号
-            ("fnval".to_string(), "16".to_string()), // 流格式
-            ("otype".to_string(), "json".to_string()), // 输出格式
-            ("platform".to_string(), "web".to_string()), // 平台
-            ("type".to_string(), "mp4".to_string()), // 视频类型
-            ("otype".to_string(), "json".to_string()), // 输出格式
+            ("qn".to_string(), (quality as i32).to_string()),
+            ("fnval".to_string(), "976".to_string()),
+            ("fnver".to_string(), "0".to_string()),
+            ("fourk".to_string(), "1".to_string()),
         ]);
 
         let resp = self
             .client
             .get_auto::<CommonResponse<PlayUrlData>>(
-                "https://api.bilibili.com/x/player/wbi/playurl",
+                "https://api.bilibili.com/x/player/playurl",
                 params,
             )
-            .await?;
+            .await
+            .map_err(|e| ParseError::NetworkError(e.to_string()))?;
 
-        let download_info = resp
-            .data
-            .ok_or_else(|| ParseError::ParseError("未找到数据".to_string()))?;
-
-        if let Some(dash) = download_info.dash {
-            let stream_type = StreamType::Dash;
-            info!("检测到Dash流地址");
-
-            let mut selected_video_url = String::from("");
-            // 解析视频流
-            // 选择最高质量的视频流
-            // 测试的时候，选择最低质量的视频流
-            if let Some(best_video) = dash.video.iter().min_by_key(|v| v.bandwidth) {
-                selected_video_url = best_video.base_url.clone();
-            }
-
-            let mut selected_audio_url = String::from("");
-            // 解析音频流
-            // 选择最高质量的音频流
-            // 测试的时候，选择最低质量的音频流
-            if let Some(best_audio) = dash.audio.iter().min_by_key(|a| a.bandwidth) {
-                selected_audio_url = best_audio.base_url.clone();
-            }
-
-            return Ok(DownloadType::CommonVideo(DashVideoInfo {
-                url: video_info.url.clone(),
-                aid: video_info.aid.clone(),
-                bvid: video_info.bvid.clone(),
-                cid: video_info.cid.clone(),
-                title: video_info.title.clone(),
-                cover: video_info.cover.clone(),
-                desc: video_info.desc.clone(),
-                views: video_info.views.clone(),
-                danmakus: video_info.danmakus.clone(),
-                up_name: video_info.up_name.clone(),
-                up_mid: video_info.up_mid.clone(),
-                video_quality_id_list: video_info.video_quality_id_list.clone(),
-                video_url: selected_video_url,
-                audio_url: selected_audio_url,
-            }));
-        } else if let Some(durl) = download_info.durl {
-            let stream_type = StreamType::MP4;
-
-            let mut selected_video_url = String::from("");
-            // 对于 MP4 流，直接使用 durl 中的 URL
-            if let Some(first_url) = durl.first() {
-                selected_video_url = first_url.url.clone();
-            }
-
-            return Err(ParseError::ApiError("暂不支持的类型, 后续更新".to_string()));
-        } else {
-            return Err(ParseError::ParseError("未找到数据源".to_string()));
-        }
+        resp.data
+            .ok_or_else(|| ParseError::ParseError("未找到播放地址信息".to_string()))
     }
 
-    pub fn aid_to_bvid(&self, aid: i64) -> String {
-        const XOR_CODE: i64 = 23442827791579;
-        const MAX_AID: i64 = 1 << 51;
-        const ALPHABET: &str = "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9RdoZf";
-        const ENCODE_MAP: [usize; 9] = [8, 7, 0, 5, 1, 3, 2, 4, 6];
+    async fn create_video_meta(
+        &self,
+        video_info: &CommonVideoInfo,
+        quality: VideoQuality,
+    ) -> Result<ParsedMeta, ParseError> {
+        let play_info = self.get_play_url(video_info, quality).await?;
 
-        let mut bvid = vec!['0'; 9];
-        let mut tmp = (MAX_AID | aid) ^ XOR_CODE;
+        if let Some(dash_info) = play_info.dash {
+            // 根据要求的质量选择视频流
+            let video_stream = dash_info
+                .video
+                .iter()
+                .filter(|v| v.quality <= quality as i32)
+                .max_by_key(|v| v.quality)
+                .ok_or_else(|| ParseError::ParseError("未找到所选质量的视频流".to_string()))?;
 
-        for (i, &pos) in ENCODE_MAP.iter().enumerate() {
-            let index = (tmp % (ALPHABET.len() as i64)) as usize;
-            bvid[pos] = ALPHABET.chars().nth(index).unwrap();
-            tmp /= ALPHABET.len() as i64;
+            let audio_stream = dash_info
+                .audio
+                .iter()
+                .max_by_key(|a| a.quality)
+                .ok_or_else(|| ParseError::ParseError("未找到可用的音频流".to_string()))?;
+
+            let video_info = DashVideoInfo {
+                url: format!("https://www.bilibili.com/video/{}", video_info.bvid),
+                aid: video_info.aid,
+                bvid: video_info.bvid.clone(),
+                cid: video_info.cid,
+                title: video_info.title.clone(),
+                cover: video_info.pic.clone(),
+                desc: video_info.desc.clone(),
+                views: video_info.stat.view.to_string(),
+                danmakus: video_info.stat.danmaku.to_string(),
+                up_name: video_info.owner.name.clone(),
+                up_mid: video_info.owner.mid,
+                video_quality_id_list: vec![video_stream.quality as i32],
+                video_url: video_stream.base_url.clone(),
+                audio_url: audio_stream.base_url.clone(),
+            };
+
+            Ok(ParsedMeta {
+                title: video_info.title.clone(),
+                stream_type: StreamType::Dash,
+                meta: DownloadType::CommonDash(video_info),
+            })
+        } else if let Some(mp4_info) = play_info.durl {
+            let mp4_video_stream = mp4_info
+                .iter()
+                .find(|s| s.order == 1)
+                .ok_or_else(|| ParseError::ParseError("未找到可用的视频流".to_string()))?;
+
+            let video_info = Mp4VideoInfo {
+                url: format!("https://www.bilibili.com/video/{}", video_info.bvid),
+                aid: video_info.aid,
+                bvid: video_info.bvid.clone(),
+                cid: video_info.cid,
+                title: video_info.title.clone(),
+                cover: video_info.pic.clone(),
+                desc: video_info.desc.clone(),
+                views: video_info.stat.view.to_string(),
+                danmakus: video_info.stat.danmaku.to_string(),
+                up_name: video_info.owner.name.clone(),
+                up_mid: video_info.owner.mid,
+                video_url: mp4_video_stream.url.clone(),
+            };
+
+            Ok(ParsedMeta {
+                title: video_info.title.clone(),
+                stream_type: StreamType::MP4,
+                meta: DownloadType::CommonMp4(video_info),
+            })
+        } else {
+            Err(ParseError::ParseError("未解析出下载源地址".to_string()))
         }
-
-        format!("BV1{}", bvid.into_iter().collect::<String>())
     }
 }
 

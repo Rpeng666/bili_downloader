@@ -1,8 +1,10 @@
 use clap::Parser;
 use colored::Colorize;
 use std::path::PathBuf;
-use tracing::{error, info, warn, debug};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+use crate::parser::{detail_parser::parser_trait::ParserOptions, models::VideoQuality};
 
 mod auth;
 mod cli;
@@ -66,6 +68,35 @@ async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
     Ok((state_file, output_dir))
 }
 
+/// 从命令行参数生成解析选项
+fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
+    // 将命令行的 quality 值转换为 VideoQuality 枚举
+    let quality = match args.quality {
+        116 => VideoQuality::Q4K,
+        80 => VideoQuality::Q1080P,
+        74 => VideoQuality::Q720P60,
+        64 => VideoQuality::Q720P,
+        32 => VideoQuality::Q480P,
+        16 => VideoQuality::Q360P,
+        _ => VideoQuality::Q1080P, // 默认 1080P
+    };
+
+    // 根据URL类型返回对应的选项
+    if url.contains("/cheese/play/") {
+        ParserOptions::Course {
+            quality,
+            episode_range: args.parts.clone(),
+        }
+    } else if url.contains("/bangumi/play/") {
+        ParserOptions::Bangumi {
+            quality,
+            episode_range: args.parts.clone(),
+        }
+    } else {
+        ParserOptions::CommonVideo { quality }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // 初始化日志
@@ -89,26 +120,31 @@ async fn main() -> Result<()> {
 
     let client = auth_manager.get_authed_client(session_id).await?;
 
+    // 创建解析选项
+    let options = create_parser_options(&args, &args.url);
+
     // 解析视频信息
     info!("开始解析...");
     let mut parser = parser::VideoParser::new(client.clone(), true);
-    let parsed_meta = parser.parse(&args.url).await.map_err(|e| {
+    let parsed_metas = parser.parse(&args.url, &options).await.map_err(|e| {
         error!("解析失败: {}", e);
         e
     })?;
-    info!("标题: << {} >>", parsed_meta.title);
-    debug!("解析结果: {:?}", parsed_meta);
+
+    // 可能有多个视频需要下载
+    info!("标题: << {} >>", parsed_metas.title);
+    debug!("解析结果: {:?}", parsed_metas);
 
     // 准备下载环境
     let (state_file, output_dir) = prepare_download_env(&args).await?;
 
     // 开始下载
-    let mut task = parsed_meta.meta.to_download_task().await?;
+    let mut task = parsed_metas.meta.to_download_task().await?;
     let downloader = downloader::VideoDownloader::new(4, state_file, output_dir, client.clone());
     downloader.download(&mut task).await?;
 
     // 后处理
-    if let Err(e) = parsed_meta.meta.post_handle_download_task(&task).await {
+    if let Err(e) = parsed_metas.meta.post_handle_download_task(&task).await {
         error!("后处理失败: {}", e);
     } else {
         info!("后处理完成");

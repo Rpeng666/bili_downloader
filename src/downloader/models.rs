@@ -25,6 +25,13 @@ pub enum DownloadItem {
         status: TaskStatus,
         output_path: String, // 输出路径
     },
+    MP4 {
+        url: String,
+        name: String,
+        desc: String,
+        status: TaskStatus,
+        output_path: String, // 输出路径
+    },
     Danmaku {
         cid: u64,
         name: String,
@@ -58,7 +65,6 @@ pub enum TaskStatus {
 
     Error(String),
 }
-
 
 pub struct DownloadProgress {
     pub task_id: String,
