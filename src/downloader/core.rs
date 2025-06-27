@@ -36,22 +36,6 @@ impl DownloadCore {
         }
     }
 
-    // // 从磁盘加载未完成的任务
-    // pub async fn load_previous_state(&self) -> Result<(), DownloadError> {
-    //     let data = tokio::fs::read(&self.state_file).await?;
-    //     let tasks: Vec<DownloadTask> = bincode::decode_from_slice(&data, bincode::config::standard())
-    //         .map_err(|e| DownloadError::InvalidState(e.to_string()))?
-    //         .0;
-
-    //     for task in tasks {
-    //         if task.status != TaskStatus::Completed {
-    //             self.tasks.lock().await.insert(task.task_id.clone(), task);
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
-
     // 添加新的下载任务
     pub async fn add_task(&self, url: &str, output: &Path) -> Result<String, DownloadError> {
         let task_id = uuid::Uuid::new_v4().to_string();
@@ -61,6 +45,8 @@ impl DownloadCore {
             .await
             .map_err(|_| DownloadError::SemaphoreError)?;
         let size = get_remote_file_size(url).await?;
+
+        debug!("开始添加下载任务: {}", task_id);
 
         let task = DownloadProgress {
             task_id: task_id.clone(),
@@ -87,34 +73,6 @@ impl DownloadCore {
 
         Ok(task_id)
     }
-
-    // // 暂停和恢复
-    // pub async fn pause(&self, task_id: &str) {
-    //     if let Some(mut task) = self.tasks.lock().await.get_mut(task_id) {
-    //         task.status = TaskStatus::Paused;
-    //     }
-    // }
-
-    // // 恢复下载任务
-    // pub async fn resume(&self, task_id: &str) -> Result<(), DownloadError> {
-    //     if let Some(mut task) = self.tasks.lock().await.get_mut(task_id) {
-    //         if task.status == TaskStatus::Paused {
-    //             task.status = TaskStatus::Queued;
-    //             Self::run(Arc::clone(&self.tasks), task_id.to_string()).await;
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
-    // // 保存当前状态到磁盘
-    // pub async fn save_state(&self) -> Result<(), DownloadError> {
-    //     let tasks: Vec<DownloadTask> = self.tasks.lock().await.iter().map(|r| r.value().clone()).collect();
-    //     let data = bincode::encode_to_vec(&tasks, bincode::config::standard())
-    //         .map_err(|e| DownloadError::InvalidState(e.to_string()))?;
-
-    //     tokio::fs::write(&self.state_file, data).await?;
-    //     Ok(())
-    // }
 
     // 获取任务状态
     pub async fn get_task_status(&self, task_id: &str) -> Option<TaskStatus> {
@@ -179,6 +137,8 @@ impl DownloadCore {
                 .unwrap()
                 .progress_chars("#>-")
         );
+
+        debug!("开始下载文件: {}", url);
 
         let mut file = tokio::fs::File::create(&output_path).await.unwrap();
         let mut stream = response.bytes_stream().map_err(std::io::Error::other);

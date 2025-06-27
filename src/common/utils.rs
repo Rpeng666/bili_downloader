@@ -59,11 +59,11 @@ impl FormatTool {
 
     // // 格式化剧集标题
     // pub fn format_bangumi_title(episode: &Value, main_episode: bool) -> String {
-    //     use crate::utils::parse::bangumi::BangumiInfo;
+    //     use crate::utils::parse::bangumi::BangumiSeasonInfo;
     //     use crate::config::Config;
 
-    //     if BangumiInfo::TYPE_ID == 2 && main_episode {
-    //         format!("《{}》{}", BangumiInfo::TITLE, episode["title"].as_str().unwrap_or(""))
+    //     if BangumiSeasonInfo::TYPE_ID == 2 && main_episode {
+    //         format!("《{}》{}", BangumiSeasonInfo::TITLE, episode["title"].as_str().unwrap_or(""))
     //     } else {
     //         if let Some(copy) = episode.get("share_copy") {
     //             if Config::MISC.show_episode_full_name {

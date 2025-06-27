@@ -1,9 +1,12 @@
 use crate::{
-    common::{client::client::BiliClient},
-    parser::detail_parser::{get_parser},
+    common::{client::client::BiliClient, models::ParsedMeta},
+    parser::detail_parser::{
+        get_detail_parser,
+        parser_trait::ParserOptions,
+    },
 };
 use errors::ParseError;
-use models::{ParsedMeta, UrlType};
+use models::UrlType;
 use tracing::debug;
 
 pub mod detail_parser;
@@ -34,17 +37,23 @@ impl VideoParser {
     ///
     /// # 返回值
     /// - `Result<ParsedMeta, ParseError>`: 解析成功返回视频元数据，失败返回错误
-    pub async fn parse(&mut self, url: &str) -> Result<ParsedMeta, ParseError> {
+    pub async fn parse(
+        &mut self,
+        url: &str,
+        options: &ParserOptions,
+    ) -> Result<ParsedMeta, ParseError> {
         // 1. 解析URL，获取视频类型
         let url_type = url_parser::UrlParser::new().parse(url).await?;
         debug!("解析到视频类型: {:?}", url_type);
 
         // 2. 根据视频类型选择对应的解析器
-        let mut parser = get_parser(&url_type, &self.api_client)?;
+        let mut parser = get_detail_parser(&url_type, &self.api_client)?;
         debug!("获取到解析器");
 
         // 3. 解析视频
-        let parsed_meta = parser.parse(&url_type).await?;
+        let parsed_meta = parser
+            .parse_with_options(&url_type, options.clone())
+            .await?;
         self.parsed_meta = Some(parsed_meta.clone());
 
         Ok(parsed_meta)

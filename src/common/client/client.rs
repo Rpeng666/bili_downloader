@@ -161,6 +161,7 @@ impl BiliClient {
             return Err(ApiError::RetryLater);
         }
 
+        let url = resp.url().to_string();
         let raw_body = resp.bytes().await?;
 
         let decompressed = match Self::try_decompress(&raw_body) {
@@ -191,6 +192,7 @@ impl BiliClient {
                 match serde_json::from_value::<T>(json_value) {
                     Ok(data) => Ok(data),
                     Err(e) => {
+                        error!("失败的请求的URL: {}", url);
                         error!("JSON 结构匹配失败: {}", e);
                         Err(ApiError::InvalidResponse(format!(
                             "结构匹配失败: {}. 响应: {}",

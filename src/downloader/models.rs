@@ -1,70 +1,74 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DownloadTask {
-    pub title: String,
-    pub items: Vec<DownloadItem>,
+    pub url: String,
+    pub file_type: FileType,
+    pub name: String,
+    pub output_path: String,
+    pub temp_path: String,
+    pub metadata: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug)]
-pub enum DownloadItem {
-    Video {
+impl DownloadTask {
+    pub fn new(
         url: String,
+        file_type: FileType,
         name: String,
-        desc: String,
-        status: TaskStatus,
-        output_path: String, // 输出路径
-    },
-    Audio {
-        url: String,
-        name: String,
-        desc: String,
-        status: TaskStatus,
-        output_path: String, // 输出路径
-    },
-    Danmaku {
-        cid: u64,
-        name: String,
-        desc: String,
-        status: TaskStatus,
-    },
-    Subtitle {
-        url: String,
-        lang: String,
-        desc: String,
-        status: TaskStatus,
-    },
-    CoverImage {
-        url: String,
-        name: String,
-        desc: String,
-        status: TaskStatus,
-    },
-    // ...
+        output_path: String,
+        temp_path: String,
+        metadata: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            url,
+            file_type,
+            name,
+            output_path,
+            temp_path,
+            metadata,
+        }
+    }
+
+    pub fn get_output_path(&self) -> PathBuf {
+        PathBuf::from(&self.output_path)
+    }
+    pub fn get_temp_path(&self) -> PathBuf {
+        PathBuf::from(&self.temp_path)
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+// --------------------------------------------------------------------
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq)]
 pub enum TaskStatus {
     Queued,
-
     Downloading,
-
-    Paused,
-
     Completed,
-
+    Failed,
     Error(String),
 }
 
-
 pub struct DownloadProgress {
     pub task_id: String,
-    pub status: TaskStatus,
     pub url: String,
     pub output_path: PathBuf,
-    pub downloaded: u64,
     pub total_size: u64,
+    pub downloaded: u64,
+    pub status: TaskStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Default)]
+pub enum FileType {
+    #[default]
+    Video,
+    Audio,
+    Danmaku,
+    Subtitle,
+    Image,
+    Other(String), // 其他类型
 }

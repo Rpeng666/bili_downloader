@@ -65,6 +65,8 @@ impl UrlParser {
             static ref AV_PATTERN: Regex = Regex::new(r"^av(\d+)$").unwrap();
             static ref EP_PATTERN: Regex = Regex::new(r"^ep(\d+)$").unwrap();
             static ref SS_PATTERN: Regex = Regex::new(r"^ss(\d+)$").unwrap();
+            static ref COURSE_EP_PATTERN: Regex = Regex::new(r"^cp(\d+)$").unwrap();
+            static ref COURSE_SS_PATTERN: Regex = Regex::new(r"^cs(\d+)$").unwrap();
         }
 
         let id = id.trim();
@@ -77,6 +79,16 @@ impl UrlParser {
             Ok(format!("https://www.bilibili.com/bangumi/play/{}", id))
         } else if SS_PATTERN.is_match(id) {
             Ok(format!("https://www.bilibili.com/bangumi/play/{}", id))
+        } else if COURSE_EP_PATTERN.is_match(id) {
+            Ok(format!(
+                "https://www.bilibili.com/cheese/play/ep{}",
+                &id[2..]
+            ))
+        } else if COURSE_SS_PATTERN.is_match(id) {
+            Ok(format!(
+                "https://www.bilibili.com/cheese/play/ss{}",
+                &id[2..]
+            ))
         } else {
             Err(ParseError::InvalidUrl)
         }
@@ -93,9 +105,13 @@ impl UrlParser {
                 (Regex::new(r"av(\d+)").unwrap(),
                 |id| UrlType::CommonVideo(VideoId { bvid: None, aid: Some(id.parse().unwrap_or_default()) })),
 
-                // 课程
-                (Regex::new(r"cheese/play/(\w+)").unwrap(),
-                |id| UrlType::CourseChapterDash(id.to_string())),
+                // 课程单集
+                (Regex::new(r"cheese/play/ep(\d+)").unwrap(),
+                |id| UrlType::CourseEpisode(id.to_string())),
+
+                // 课程整季
+                (Regex::new(r"cheese/play/ss(\d+)").unwrap(),
+                |id| UrlType::CourseSeason(id.to_string())),
 
                 // 番剧ep
                 (Regex::new(r"ep(\d+)").unwrap(),

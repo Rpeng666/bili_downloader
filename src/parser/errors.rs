@@ -1,27 +1,27 @@
+use crate::common::client::error::ApiError;
 use std::num::ParseIntError;
 use thiserror::Error;
-use crate::common::client::error::ApiError;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("无效的URL")]
     InvalidUrl,
-    
+
     #[error("不支持的视频类型")]
     UnsupportedType,
-    
+
     #[error("不支持的格式")]
     UnsupportedFormat,
-    
+
     #[error("无效的短链接")]
     InvalidShortUrl,
-    
+
     #[error("网络错误: {0}")]
     NetworkError(String),
-    
+
     #[error("需要登录")]
     LoginRequired,
-    
+
     #[error("重定向失败: {0}")]
     RedirectFailed(String),
 
@@ -35,7 +35,7 @@ pub enum ParseError {
     Redirect(String),
 
     #[error("需要付费")]
-    PaymentRequired
+    PaymentRequired,
 }
 
 impl From<ApiError> for ParseError {

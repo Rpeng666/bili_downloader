@@ -1,13 +1,13 @@
-use super::error::DownloadError;
 use std::path::Path;
 use tokio::process::Command;
 use tracing::error;
+
+use crate::downloader::error::DownloadError;
 
 pub struct MediaMerger;
 
 impl MediaMerger {
     pub async fn merge_av(
-        &self,
         video_path: &Path,
         audio_path: &Path,
         output_path: &Path,
