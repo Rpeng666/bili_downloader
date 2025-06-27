@@ -2,7 +2,6 @@ use serde::Serialize;
 use serde_derive::Deserialize;
 use std::fmt;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct VideoId {
     pub bvid: Option<String>,
@@ -86,7 +85,6 @@ impl fmt::Display for UrlType {
         }
     }
 }
-
 
 // 视频清晰度选项
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

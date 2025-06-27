@@ -28,7 +28,7 @@ pub struct Cli {
     #[arg(long, value_name = "DIR")]
     #[arg(default_value = ".")]
     #[arg(value_hint = clap::ValueHint::DirPath)]
-    pub output: PathBuf,
+    pub output_dir: PathBuf,
 
     /// 视频质量 (1-116)
     #[arg(long)]
@@ -46,4 +46,17 @@ pub struct Cli {
     #[arg(long, value_name = "RANGE")]
     #[arg(help = "指定要下载的集数范围，如: 1-3,5,7-9")]
     pub parts: Option<String>,
+
+    #[arg(long, value_name = "是否下载视频", default_value_t = true)]
+    pub need_video: bool,
+    #[arg(long, value_name = "是否下载音频", default_value_t = true)]
+    pub need_audio: bool,
+    #[arg(long, value_name = "是否下载字幕", default_value_t = true)]
+    pub need_subtitle: bool,
+    #[arg(long, value_name = "是否下载弹幕", default_value_t = true)]
+    pub need_danmaku: bool,
+    #[arg(long, value_name = "是否合并音视频", default_value_t = true)]
+    pub merge: bool,
+    #[arg(long, value_name = "并发数", default_value_t = 3)]
+    pub concurrency: usize,
 }

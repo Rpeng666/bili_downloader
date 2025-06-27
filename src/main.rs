@@ -4,13 +4,17 @@ use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::parser::{detail_parser::parser_trait::ParserOptions, models::VideoQuality};
+use crate::parser::{
+    detail_parser::{models::DownloadConfig, parser_trait::ParserOptions},
+    models::VideoQuality,
+};
 
 mod auth;
 mod cli;
 mod common;
 mod downloader;
 mod parser;
+mod post_process;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -61,7 +65,7 @@ async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
     }
 
     // 创建输出目录
-    let output_dir = args.output.clone();
+    let output_dir = args.output_dir.clone();
     info!("创建输出目录: {:?}", output_dir);
     tokio::fs::create_dir_all(&output_dir).await?;
 
@@ -89,11 +93,44 @@ fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
         }
     } else if url.contains("/bangumi/play/") {
         ParserOptions::Bangumi {
-            quality,
-            episode_range: args.parts.clone(),
+            config: DownloadConfig {
+                resolution: quality,
+                need_audio: args.need_audio,
+                need_video: args.need_video,
+                need_subtitle: args.need_subtitle,
+                need_danmaku: args.need_danmaku,
+                concurrency: args.concurrency,
+                episode_range: args.parts.clone(),
+                merge: args.merge,
+                output_dir: args
+                    .output_dir
+                    .clone()
+                    .to_str()
+                    .unwrap_or("./downloads")
+                    .to_string(),
+                output_format: "mp4".to_string(),
+            },
         }
     } else {
-        ParserOptions::CommonVideo { quality }
+        ParserOptions::CommonVideo {
+            config: DownloadConfig {
+                resolution: quality,
+                need_audio: args.need_audio,
+                need_video: args.need_video,
+                need_subtitle: args.need_subtitle,
+                need_danmaku: args.need_danmaku,
+                concurrency: args.concurrency,
+                episode_range: args.parts.clone(),
+                merge: args.merge,
+                output_dir: args
+                    .output_dir
+                    .clone()
+                    .to_str()
+                    .unwrap_or("./downloads")
+                    .to_string(),
+                output_format: "mp4".to_string(),
+            },
+        }
     }
 }
 
@@ -139,12 +176,12 @@ async fn main() -> Result<()> {
     let (state_file, output_dir) = prepare_download_env(&args).await?;
 
     // 开始下载
-    let mut task = parsed_metas.meta.to_download_task().await?;
-    let downloader = downloader::VideoDownloader::new(4, state_file, output_dir, client.clone());
+    let mut task = parsed_metas.download_items.clone();
+    let downloader = downloader::VideoDownloader::new(4, state_file, client.clone());
     downloader.download(&mut task).await?;
 
     // 后处理
-    if let Err(e) = parsed_metas.meta.post_handle_download_task(&task).await {
+    if let Err(e) = parsed_metas.post_process(&task, &options).await {
         error!("后处理失败: {}", e);
     } else {
         info!("后处理完成");

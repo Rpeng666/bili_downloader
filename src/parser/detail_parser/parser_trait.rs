@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{
-    common::models::DownloadType,
+    common::models::{DownloadType, ParsedMeta},
     parser::{
+        detail_parser::models::DownloadConfig,
         errors::ParseError,
         models::{UrlType, VideoQuality},
     },
@@ -14,13 +15,12 @@ use crate::{
 pub enum ParserOptions {
     // 普通视频的选项
     CommonVideo {
-        quality: VideoQuality,
+        config: DownloadConfig, // 下载配置
     },
 
     // 番剧的选项
     Bangumi {
-        quality: VideoQuality,
-        episode_range: Option<String>, // 仅用于整季番剧
+        config: DownloadConfig, // 下载配置
     },
 
     // 课程的选项
@@ -33,31 +33,16 @@ pub enum ParserOptions {
 impl Default for ParserOptions {
     fn default() -> Self {
         Self::CommonVideo {
-            quality: VideoQuality::default(),
+            config: DownloadConfig::default(),
         }
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub enum StreamType {
+    #[default]
     Dash, // DASH流
-    MP4,  // MP4流
-}
-
-impl Default for StreamType {
-    fn default() -> Self {
-        StreamType::Dash
-    }
-}
-
-// 需要下载数据的元数据
-#[derive(Debug, Clone)]
-pub struct ParsedMeta {
-    // 解析出来的一些通用的信息
-    pub title: String, // 视频标题
-    pub stream_type: StreamType,
-    // 枚举不同的要下载的类型
-    pub meta: DownloadType,
+    MP4, // MP4流
 }
 
 // 定义一个trait，用于解析视频信息，然后返回元数据

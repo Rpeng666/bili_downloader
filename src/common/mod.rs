@@ -9,7 +9,7 @@ pub mod client {
     pub mod error;
 }
 pub mod download_type {
-    pub mod video;
+    pub mod common_video;
 }
 
 pub mod models;
