@@ -74,23 +74,22 @@ async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
 
 /// 从命令行参数生成解析选项
 fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
-    // 将命令行的 quality 值转换为 VideoQuality 枚举
+    // 将命令行的 quality 选项转换为 VideoQuality 枚举
     let quality = match args.quality {
-        16 => VideoQuality::Q360P,     // 流畅 360P
-        32 => VideoQuality::Q480P,     // 清晰 480P
-        64 => VideoQuality::Q720P,     // 高清 720P
-        74 => VideoQuality::Q720P60,   // 高清 720P60
-        80 => VideoQuality::Q1080P,    // 高清 1080P
-        112 => VideoQuality::Q1080PP,  // 高清 1080P+
-        116 => VideoQuality::Q1080P60, // 高清 1080P60
-        120 => VideoQuality::Q4K,      // 超清 4K
-        125 => VideoQuality::QHdr,     // HDR 真彩色
-        127 => VideoQuality::Q8K,      // 超高清 8K
-        _ => VideoQuality::Q1080P,     // 默认 1080P
+        cli::QualityOption::Q360P => VideoQuality::Q360P,       // 流畅 360P
+        cli::QualityOption::Q480P => VideoQuality::Q480P,       // 清晰 480P
+        cli::QualityOption::Q720P => VideoQuality::Q720P,       // 高清 720P
+        cli::QualityOption::Q720P60 => VideoQuality::Q720P60,   // 高清 720P60
+        cli::QualityOption::Q1080P => VideoQuality::Q1080P,     // 高清 1080P
+        cli::QualityOption::Q1080PP => VideoQuality::Q1080PP,   // 高清 1080P+
+        cli::QualityOption::Q1080P60 => VideoQuality::Q1080P60, // 高清 1080P60
+        cli::QualityOption::Q4K => VideoQuality::Q4K,           // 超清 4K
+        cli::QualityOption::QHdr => VideoQuality::QHdr,         // HDR 真彩色
+        cli::QualityOption::Q8K => VideoQuality::Q8K,           // 超高清 8K
     };
 
     debug!(
-        "命令行质量参数: {} -> {:?} ({})",
+        "命令行质量参数: {:?} -> {:?} ({})",
         args.quality, quality, quality as i32
     );
 

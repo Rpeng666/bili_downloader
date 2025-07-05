@@ -1,5 +1,40 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+/// 视频清晰度选项
+#[derive(Debug, Clone, ValueEnum)]
+pub enum QualityOption {
+    /// 流畅 360P
+    #[value(name = "360p")]
+    Q360P,
+    /// 清晰 480P
+    #[value(name = "480p")]
+    Q480P,
+    /// 高清 720P
+    #[value(name = "720p")]
+    Q720P,
+    /// 高清 720P60
+    #[value(name = "720p60")]
+    Q720P60,
+    /// 高清 1080P
+    #[value(name = "1080p")]
+    Q1080P,
+    /// 高清 1080P+
+    #[value(name = "1080p+")]
+    Q1080PP,
+    /// 高清 1080P60
+    #[value(name = "1080p60")]
+    Q1080P60,
+    /// 超清 4K
+    #[value(name = "4k")]
+    Q4K,
+    /// HDR 真彩色
+    #[value(name = "hdr")]
+    QHdr,
+    /// 超高清 8K
+    #[value(name = "8k")]
+    Q8K,
+}
 
 /// B站视频下载器
 #[derive(Parser, Debug)]
@@ -30,12 +65,12 @@ pub struct Cli {
     #[arg(value_hint = clap::ValueHint::DirPath)]
     pub output_dir: PathBuf,
 
-    /// 视频质量 (1-116)
+    /// 视频质量
     #[arg(long)]
-    #[arg(value_name = "QUALITY")]
-    #[arg(default_value = "80")]
-    #[arg(help = "视频质量: 116=4K, 80=1080P, 64=720P, 32=480P, 16=360P")]
-    pub quality: u32,
+    #[arg(value_enum)]
+    #[arg(default_value = "1080p")]
+    #[arg(help = "视频清晰度选择")]
+    pub quality: QualityOption,
 
     /// Cookie字符串 (可选)
     #[arg(long, value_name = "COOKIE")]
