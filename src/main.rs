@@ -76,14 +76,23 @@ async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
 fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
     // 将命令行的 quality 值转换为 VideoQuality 枚举
     let quality = match args.quality {
-        116 => VideoQuality::Q4K,
-        80 => VideoQuality::Q1080P,
-        74 => VideoQuality::Q720P60,
-        64 => VideoQuality::Q720P,
-        32 => VideoQuality::Q480P,
-        16 => VideoQuality::Q360P,
-        _ => VideoQuality::Q1080P, // 默认 1080P
+        16 => VideoQuality::Q360P,     // 流畅 360P
+        32 => VideoQuality::Q480P,     // 清晰 480P
+        64 => VideoQuality::Q720P,     // 高清 720P
+        74 => VideoQuality::Q720P60,   // 高清 720P60
+        80 => VideoQuality::Q1080P,    // 高清 1080P
+        112 => VideoQuality::Q1080PP,  // 高清 1080P+
+        116 => VideoQuality::Q1080P60, // 高清 1080P60
+        120 => VideoQuality::Q4K,      // 超清 4K
+        125 => VideoQuality::QHdr,     // HDR 真彩色
+        127 => VideoQuality::Q8K,      // 超高清 8K
+        _ => VideoQuality::Q1080P,     // 默认 1080P
     };
+
+    debug!(
+        "命令行质量参数: {} -> {:?} ({})",
+        args.quality, quality, quality as i32
+    );
 
     // 根据URL类型返回对应的选项
     if url.contains("/cheese/play/") {

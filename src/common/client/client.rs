@@ -514,4 +514,55 @@ impl BiliClient {
 
         Ok((img_key.to_string(), sub_key.to_string()))
     }
+
+    // 获取视频下载专用的请求头
+    pub fn get_video_download_headers(video_url: &str) -> reqwest::header::HeaderMap {
+        let mut headers = Self::get_default_headers();
+        
+        // 关键：添加视频下载必需的请求头
+        headers.insert("Origin", reqwest::header::HeaderValue::from_static("https://www.bilibili.com"));
+        headers.insert("Sec-Fetch-Dest", reqwest::header::HeaderValue::from_static("video"));
+        headers.insert("Sec-Fetch-Mode", reqwest::header::HeaderValue::from_static("cors"));
+        headers.insert("Sec-Fetch-Site", reqwest::header::HeaderValue::from_static("cross-site"));
+        
+        // 根据视频URL设置合适的Referer
+        if video_url.contains("bilivideo.com") {
+            // 对于B站的CDN地址，使用播放页面作为Referer
+            headers.insert(REFERER, reqwest::header::HeaderValue::from_static("https://www.bilibili.com/video/"));
+        }
+        
+        // 设置Range请求头以支持断点续传（可选）
+        // headers.insert("Range", reqwest::header::HeaderValue::from_static("bytes=0-"));
+        
+        headers
+    }
+
+    // 专门用于下载视频文件的方法
+    pub async fn get_video_response(&self, url: &str) -> Result<Response, ApiError> {
+        let cookie = self.get_all_cookies().await;
+        let cookie_str = cookie
+            .iter()
+            .map(|c| {
+                format!(
+                    "{}={}",
+                    c["name"].as_str().unwrap(),
+                    c["value"].as_str().unwrap()
+                )
+            })
+            .collect::<Vec<String>>()
+            .join(";");
+
+        debug!("🎬 正在请求视频下载: {}", url);
+        debug!("🍪 使用的 Cookie: {}", cookie_str);
+
+        let resp = self
+            .inner
+            .get(url)
+            .header(COOKIE, cookie_str)
+            .headers(Self::get_video_download_headers(url))
+            .send()
+            .await?;
+
+        Ok(resp)
+    }
 }

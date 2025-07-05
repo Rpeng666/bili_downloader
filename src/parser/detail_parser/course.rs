@@ -50,8 +50,30 @@ impl<'a> CourseParser<'a> {
 
         debug!("get_course_info resp: {:?}", resp);
 
+        // 检查API返回的错误码
+        if resp.code != 0 {
+            return match resp.code {
+                -403 => Err(ParseError::ParseError(format!(
+                    "课程访问被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. 需要登录 3. 权限不足", 
+                    resp.message
+                ))),
+                -404 => Err(ParseError::ParseError(format!(
+                    "课程不存在（-404）: {}。课程可能已下架或URL错误", 
+                    resp.message
+                ))),
+                -500 => Err(ParseError::ParseError(format!(
+                    "课程访问限制（-500）: {}。课程可能需要购买或特定权限", 
+                    resp.message
+                ))),
+                _ => Err(ParseError::ParseError(format!(
+                    "课程API返回错误（{}）: {}", 
+                    resp.code, resp.message
+                ))),
+            };
+        }
+
         resp.data
-            .ok_or_else(|| ParseError::ParseError("未找到课程信息".to_string()))
+            .ok_or_else(|| ParseError::ParseError("API响应中未找到课程信息".to_string()))
     }
 
     // 获取播放地址
@@ -80,8 +102,30 @@ impl<'a> CourseParser<'a> {
             .await
             .map_err(|e| ParseError::NetworkError(e.to_string()))?;
 
+        // 检查API返回的错误码
+        if resp.code != 0 {
+            return match resp.code {
+                -403 => Err(ParseError::ParseError(format!(
+                    "课程播放地址获取被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. Cookie已过期 3. 需要登录", 
+                    resp.message
+                ))),
+                -404 => Err(ParseError::ParseError(format!(
+                    "课程播放地址不存在（-404）: {}。课程可能已下架", 
+                    resp.message
+                ))),
+                -500 => Err(ParseError::ParseError(format!(
+                    "课程播放限制（-500）: {}。课程可能需要购买或特定权限", 
+                    resp.message
+                ))),
+                _ => Err(ParseError::ParseError(format!(
+                    "课程播放地址API返回错误（{}）: {}", 
+                    resp.code, resp.message
+                ))),
+            };
+        }
+
         resp.data
-            .ok_or_else(|| ParseError::ParseError("未找到播放地址信息".to_string()))
+            .ok_or_else(|| ParseError::ParseError("API响应中未找到播放地址信息".to_string()))
     }
 
     // 处理单集课程
