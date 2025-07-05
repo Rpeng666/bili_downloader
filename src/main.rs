@@ -16,6 +16,9 @@ mod downloader;
 mod parser;
 mod post_process;
 
+#[cfg(feature = "mcp")]
+mod mcp;
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// 处理用户认证
@@ -151,6 +154,21 @@ async fn main() -> Result<()> {
 
     // 解析命令行参数
     let args = cli::Cli::parse();
+
+    // 检查是否启动MCP服务器模式
+    #[cfg(feature = "mcp")]
+    if args.mcp {
+        info!("🚀 启动 MCP 服务器模式");
+        let mut mcp_server = mcp::McpServer::new();
+        return mcp_server.run().await.map_err(|e| e.into());
+    }
+
+    #[cfg(not(feature = "mcp"))]
+    if args.mcp {
+        error!("MCP功能未启用。请使用 --features mcp 重新编译");
+        return Err("MCP功能未启用".into());
+    }
+
     info!("开始下载视频: {}", args.url);
 
     // 认证处理

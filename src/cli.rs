@@ -94,4 +94,9 @@ pub struct Cli {
     pub merge: bool,
     #[arg(long, value_name = "并发数", default_value_t = 3)]
     pub concurrency: usize,
+
+    /// 启动MCP服务器模式 (Model Context Protocol)
+    #[arg(long)]
+    #[arg(help = "启动MCP服务器模式，用于AI助手集成")]
+    pub mcp: bool,
 }
