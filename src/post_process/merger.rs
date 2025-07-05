@@ -1,6 +1,6 @@
 use std::path::Path;
 use tokio::process::Command;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::downloader::error::DownloadError;
 
@@ -17,9 +17,14 @@ impl MediaMerger {
             return Err(DownloadError::FileNotFound(video_path.to_path_buf()));
         }
 
+        debug!("检查视频文件: {:?}", video_path);
+
         if !audio_path.exists() {
             return Err(DownloadError::FileNotFound(audio_path.to_path_buf()));
         }
+        debug!("检查音频文件: {:?}", audio_path);
+
+        debug!("开始合并视频和音频到: {:?}", output_path);
 
         // 检查ffmpeg是否安装
         if Command::new("ffmpeg")
@@ -43,12 +48,12 @@ impl MediaMerger {
             .arg("-c:v")
             .arg("copy")
             .arg("-c:a")
-            .arg("aac")
-            .arg("-y") // 自动覆盖输出文件（可选）
+            .arg("aac") // 使用AAC编码音频
+            .arg("-y") // 自动覆盖
             .arg(output_path)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null()) // 屏蔽 stdout
-            .stderr(std::process::Stdio::piped()) // 捕获 stderr 日志
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .output()
             .await?;
 

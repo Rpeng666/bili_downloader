@@ -5,7 +5,7 @@ pub enum DownloadError {
     /// HTTP错误
     HttpError(reqwest::Error),
     /// IO错误
-    IoError(std::io::Error),
+    IoError(String),
     /// 无效的URL错误
     InvalidUrl(String),
     /// 任务未找到错误
@@ -60,6 +60,6 @@ impl From<reqwest::Error> for DownloadError {
 
 impl From<std::io::Error> for DownloadError {
     fn from(error: std::io::Error) -> Self {
-        DownloadError::IoError(error)
+        DownloadError::IoError(error.to_string())
     }
 }

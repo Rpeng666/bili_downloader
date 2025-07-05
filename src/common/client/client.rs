@@ -194,6 +194,7 @@ impl BiliClient {
                     Err(e) => {
                         error!("失败的请求的URL: {}", url);
                         error!("JSON 结构匹配失败: {}", e);
+                        error!("期望的结构 可能是: {}", std::any::type_name::<T>());
                         Err(ApiError::InvalidResponse(format!(
                             "结构匹配失败: {}. 响应: {}",
                             e, text

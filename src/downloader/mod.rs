@@ -56,7 +56,7 @@ impl VideoDownloader {
         self.start_download(&url, &download_file_path, &file_type)
             .await?;
 
-        info!("下载完成！ {}", name);
+        info!("下载完成！ {}", download_file_path.display());
         Ok(())
     }
 

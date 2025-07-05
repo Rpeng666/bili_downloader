@@ -10,6 +10,7 @@ use crate::parser::detail_parser::parser_trait::{ParserOptions, StreamType, pars
 use crate::parser::models::UrlType;
 use crate::parser::{ParsedMeta, errors::ParseError};
 use async_trait::async_trait;
+use serde::de;
 use serde_derive::Deserialize;
 use tracing::debug;
 
@@ -118,23 +119,23 @@ impl<'a> BangumiParser<'a> {
         if resp.code != 0 {
             return match resp.code {
                 -403 => Err(ParseError::ParseError(format!(
-                    "番剧访问被拒绝（-403）: {}。可能原因：1. 番剧需要大会员权限 2. 地区限制 3. 需要登录", 
+                    "番剧访问被拒绝（-403）: {}。可能原因：1. 番剧需要大会员权限 2. 地区限制 3. 需要登录",
                     resp.message
                 ))),
                 -404 => Err(ParseError::ParseError(format!(
-                    "番剧不存在（-404）: {}。番剧可能已下架或URL错误", 
+                    "番剧不存在（-404）: {}。番剧可能已下架或URL错误",
                     resp.message
                 ))),
                 -10403 => Err(ParseError::ParseError(format!(
-                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号", 
+                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号",
                     resp.message
                 ))),
                 6001 => Err(ParseError::ParseError(format!(
-                    "地区限制（6001）: {}。此番剧在当前地区不可观看", 
+                    "地区限制（6001）: {}。此番剧在当前地区不可观看",
                     resp.message
                 ))),
                 _ => Err(ParseError::ParseError(format!(
-                    "番剧API返回错误（{}）: {}", 
+                    "番剧API返回错误（{}）: {}",
                     resp.code, resp.message
                 ))),
             };
@@ -168,23 +169,23 @@ impl<'a> BangumiParser<'a> {
         if resp.code != 0 {
             return match resp.code {
                 -403 => Err(ParseError::ParseError(format!(
-                    "番剧播放地址获取被拒绝（-403）: {}。可能原因：1. 需要大会员权限 2. Cookie已过期 3. 需要登录", 
+                    "番剧播放地址获取被拒绝（-403）: {}。可能原因：1. 需要大会员权限 2. Cookie已过期 3. 需要登录",
                     resp.message
                 ))),
                 -404 => Err(ParseError::ParseError(format!(
-                    "番剧播放地址不存在（-404）: {}。番剧可能已下架", 
+                    "番剧播放地址不存在（-404）: {}。番剧可能已下架",
                     resp.message
                 ))),
                 -10403 => Err(ParseError::ParseError(format!(
-                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号", 
+                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号",
                     resp.message
                 ))),
                 6001 => Err(ParseError::ParseError(format!(
-                    "地区限制（6001）: {}。此番剧在当前地区不可观看", 
+                    "地区限制（6001）: {}。此番剧在当前地区不可观看",
                     resp.message
                 ))),
                 _ => Err(ParseError::ParseError(format!(
-                    "番剧播放地址API返回错误（{}）: {}", 
+                    "番剧播放地址API返回错误（{}）: {}",
                     resp.code, resp.message
                 ))),
             };
@@ -213,17 +214,25 @@ impl<'a> BangumiParser<'a> {
                 Some(DownloadTask::new(
                     video_url.base_url.clone(),
                     FileType::Video,
-                    format!("{} - {}", episode.title, video_url.id),
+                    format!("{} - {} - {}", title, episode.title, video_url.id),
                     format!("./tmp/{} - {} - {}.mp4", title, episode.title, video_url.id),
                     config.output_dir.clone(),
                     HashMap::new(),
                 ))
-            } else if let Some(durl) = play_info.durl.as_ref().and_then(|d| d.first()) {
+            } else if let Some(durl_info) = play_info.durls.as_ref().and_then(|d| d.first()) {
+                let durl_item = durl_info
+                    .durl
+                    .first()
+                    .ok_or_else(|| ParseError::ParseError("未找到 MP4 流信息".to_string()))?;
+
                 Some(DownloadTask::new(
-                    durl.url.clone(),
+                    durl_item.url.clone(),
                     FileType::Video,
-                    format!("{}.mp4", episode.title),
-                    format!("./tmp/{} - {} - {}.mp4", title, episode.title, durl.order),
+                    format!("{} - {} - {}.mp4", title, episode.title, durl_item.order),
+                    format!(
+                        "./tmp/{} - {} - {}.mp4",
+                        title, episode.title, durl_item.order
+                    ),
                     config.output_dir.clone(),
                     HashMap::from([("desc".to_string(), episode.title.clone())]),
                 ))
@@ -241,9 +250,9 @@ impl<'a> BangumiParser<'a> {
                 Some(DownloadTask::new(
                     audio_url.base_url.clone(),
                     FileType::Audio,
-                    format!("{}.mp3", episode.title),
+                    format!("{} - {} - {}.m4s", title, episode.title, audio_url.id),
+                    format!("./tmp/{} - {} - {}.m4s", title, episode.title, audio_url.id),
                     config.output_dir.clone(),
-                    format!("./tmp/{} - {}.mp3", title, episode.title),
                     HashMap::from([("desc".to_string(), episode.title.clone())]),
                 ))
             } else {
@@ -306,6 +315,7 @@ impl<'a> Parser for BangumiParser<'a> {
                 let episode_range = config.episode_range.as_ref();
                 debug!("番剧 {} 共有 {} 集", bangumi_info.title, bangumi_info.total);
                 debug!("指定的集数范围: {:?}", episode_range);
+                debug!("番剧集数列表: {:?}", bangumi_info.episodes);
 
                 let episodes_to_download = match episode_range {
                     Some(range) => {
@@ -315,12 +325,7 @@ impl<'a> Parser for BangumiParser<'a> {
                         // 验证集数是否有效
                         let valid_episodes: Vec<_> = episodes
                             .into_iter()
-                            .filter_map(|ep_id| {
-                                bangumi_info
-                                    .episodes
-                                    .iter()
-                                    .find(|ep| ep.id as i64 == ep_id)
-                            })
+                            .filter_map(|id| bangumi_info.episodes.get(id as usize - 1))
                             .collect();
 
                         if valid_episodes.is_empty() {
@@ -341,9 +346,11 @@ impl<'a> Parser for BangumiParser<'a> {
                 // 获取所有选定集数的元数据
                 let mut season_download_tasks: Vec<DownloadTask> = Vec::new();
                 for episode in episodes_to_download {
+                    debug!("处理集数: {} - {}", episode.id, episode.title);
                     let episode_tasks = self
                         .create_episode_meta(&bangumi_info.title, episode, &config)
                         .await?;
+                    debug!("获取到集数 {} 成功", episode.id);
                     season_download_tasks.extend(episode_tasks);
                 }
 

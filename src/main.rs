@@ -149,7 +149,7 @@ fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
 async fn main() -> Result<()> {
     // 初始化日志
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::DEBUG)
         .init();
 
     // 解析命令行参数

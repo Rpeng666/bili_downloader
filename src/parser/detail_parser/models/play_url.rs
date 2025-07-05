@@ -8,9 +8,11 @@ pub struct PlayUrlData {
     pub accept_quality: Vec<i32>,        // 支持的分辨率ID列表
     pub quality: Option<i32>,            // 当前选择的分辨率ID
     pub dash: Option<DashInfo>,          // DASH流信息
-    pub durl: Option<Vec<Mp4Info>>,      // MP4流信息
+    pub durl: Option<Vec<Mp4Info>>,           // MP4流信息
+    pub durls: Option<Vec<DurlInfo>>,    // MP4流信息
 }
 
+// ------------------------------------------------------------------------------------------
 #[derive(Debug, Clone, Deserialize)]
 pub struct DashInfo {
     pub duration: i64,        // 时长，单位为秒
@@ -31,6 +33,13 @@ pub struct DashItem {
     pub frame_rate: Option<String>,      // 帧率
 }
 
+// ------------------------------------------------------------------------------------------
+#[derive(Debug, Clone, Deserialize)]
+pub struct DurlInfo {
+    pub quality: i32,  // 分辨率ID
+    pub durl: Vec<Mp4Info>, // MP4流信息
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Mp4Info {
     pub order: i32,                      // 流的顺序
@@ -38,5 +47,5 @@ pub struct Mp4Info {
     pub size: i64,                       // 文件大小，单位为字节
     pub url: String,                     // 流的URL
     pub backup_url: Option<Vec<String>>, // 备用URL列表
-    pub quality: i32,                    // 分辨率ID
+    pub quality: Option<i32>,            // 分辨率ID
 }

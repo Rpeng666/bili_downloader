@@ -1,6 +1,6 @@
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::io::Read;
 
 use crate::common::client::client::BiliClient;
 use crate::downloader::models::{DownloadProgress, FileType, TaskStatus};
@@ -59,7 +59,7 @@ impl DownloadCore {
         // 检查内容并获取大小（仅对需要的类型）
         // 获取内容信息（统一调用，避免重复）
         let content_info = get_content_info(&self.download_client, url).await?;
-        
+
         // 根据策略处理文件大小
         let total_size = match strategy {
             DownloadStrategy::BinaryStream { .. } => {
@@ -68,12 +68,12 @@ impl DownloadCore {
                     warn!("URL 返回 HTML 内容，可能不是文件下载链接: {}", url);
                     return Err(DownloadError::InvalidUrl("URL 返回 HTML 内容".to_string()));
                 }
-                
+
                 match content_info.content_length {
                     Some(size) => {
                         debug!("获取到文件大小: {:.1}MB", size as f64 / 1024.0 / 1024.0);
                         size
-                    },
+                    }
                     None => {
                         warn!("无法获取文件大小，URL: {}", url);
                         // 对于无法获取大小的情况，返回0，让下载逻辑自行处理
@@ -232,15 +232,15 @@ impl DownloadCore {
         task_lock: &Arc<Mutex<DownloadProgress>>,
         file_type: &FileType,
     ) -> Result<(), DownloadError> {
-
         debug!("开始下载二进制文件: {}", url);
 
         // 首先检查是否存在部分下载的文件
         let mut start_pos = 0u64;
         if output_path.exists() {
+            debug!("检测到部分下载文件: {:?}", output_path);
             start_pos = tokio::fs::metadata(output_path)
                 .await
-                .map_err(DownloadError::IoError)?
+                .map_err(|e| DownloadError::IoError(e.to_string()))?
                 .len();
             if start_pos > 0 {
                 info!("检测到部分下载文件，从 {} 字节处继续下载", start_pos);
@@ -252,7 +252,7 @@ impl DownloadCore {
             let task_guard = task_lock.lock().await;
             task_guard.total_size
         };
-        
+
         // 如果文件已经完整下载，直接返回
         if start_pos >= total_size && total_size > 0 {
             info!("文件已完整下载，跳过: {}", output_path.display());
@@ -276,20 +276,22 @@ impl DownloadCore {
         };
 
         // 使用重试机制下载
-        const MAX_RETRIES: usize = 20;  // 增加到20次重试
-        const RETRY_DELAY_SECONDS: u64 = 2;  // 减少延时到2秒
-        
+        const MAX_RETRIES: usize = 20; // 增加到20次重试
+        const RETRY_DELAY_SECONDS: u64 = 2; // 减少延时到2秒
+
         for attempt in 1..=MAX_RETRIES {
             match Self::download_with_resume(
-                download_client, 
-                url, 
-                output_path, 
-                start_pos, 
+                download_client,
+                url,
+                output_path,
+                start_pos,
                 total_size,
                 file_type,
                 &pb,
-                task_lock
-            ).await {
+                task_lock,
+            )
+            .await
+            {
                 Ok(_) => {
                     if let Some(pb) = pb {
                         pb.finish_with_message("下载完成");
@@ -302,43 +304,52 @@ impl DownloadCore {
                     let current_pos = if output_path.exists() {
                         tokio::fs::metadata(output_path)
                             .await
-                            .map_err(DownloadError::IoError)?
+                            .map_err(|e| DownloadError::IoError(e.to_string()))?
                             .len()
                     } else {
                         start_pos
                     };
-                    
+
                     let progress_percent = if total_size > 0 {
                         (current_pos as f64 / total_size as f64 * 100.0).round() as u32
                     } else {
                         0
                     };
-                    
-                    warn!("下载中断 (尝试 {}/{}，进度 {}%): {}", 
-                        attempt, MAX_RETRIES, progress_percent, msg);
-                    
+
+                    warn!(
+                        "下载中断 (尝试 {}/{}，进度 {}%): {}",
+                        attempt, MAX_RETRIES, progress_percent, msg
+                    );
+
                     // 更新断点位置
                     start_pos = current_pos;
                     if start_pos > 0 {
-                        info!("断点续传从 {} 字节处继续 ({:.1}MB)", 
-                            start_pos, start_pos as f64 / 1024.0 / 1024.0);
-                        
+                        info!(
+                            "断点续传从 {} 字节处继续 ({:.1}MB)",
+                            start_pos,
+                            start_pos as f64 / 1024.0 / 1024.0
+                        );
+
                         if let Some(pb) = &pb {
                             pb.set_position(start_pos);
-                            pb.set_message(format!("重试 {}/{} ({}%)", 
-                                attempt + 1, MAX_RETRIES, progress_percent));
+                            pb.set_message(format!(
+                                "重试 {}/{} ({}%)",
+                                attempt + 1,
+                                MAX_RETRIES,
+                                progress_percent
+                            ));
                         }
                     }
-                    
+
                     // 如果已经下载了相当一部分，减少延时
                     let delay = if progress_percent > 50 {
-                        1  // 下载过半时，快速重试
+                        1 // 下载过半时，快速重试
                     } else if progress_percent > 10 {
-                        2  // 有一定进度时，中等延时
+                        2 // 有一定进度时，中等延时
                     } else {
-                        RETRY_DELAY_SECONDS  // 刚开始时，正常延时
+                        RETRY_DELAY_SECONDS // 刚开始时，正常延时
                     };
-                    
+
                     tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
                 }
                 Err(DownloadError::RateLimited(_)) => {
@@ -347,7 +358,8 @@ impl DownloadCore {
                         pb.finish_with_message("访问受限");
                     }
                     return Err(DownloadError::RateLimited(format!(
-                        "下载过程中遇到访问限制，URL: {}", url
+                        "下载过程中遇到访问限制，URL: {}",
+                        url
                     )));
                 }
                 Err(e) => {
@@ -363,11 +375,10 @@ impl DownloadCore {
             pb.finish_with_message("重试次数用尽");
         }
         Err(DownloadError::StreamError(format!(
-            "下载失败，已重试 {} 次", MAX_RETRIES
+            "下载失败，已重试 {} 次",
+            MAX_RETRIES
         )))
     }
-
-
 
     // 带断点续传的下载方法
     async fn download_with_resume(
@@ -382,7 +393,7 @@ impl DownloadCore {
     ) -> Result<(), DownloadError> {
         use futures::StreamExt;
         use tokio::io::AsyncWriteExt;
-        
+
         // 对于音频和视频文件，构建带特殊请求头的请求
         let mut request_builder = match file_type {
             FileType::Video | FileType::Audio => {
@@ -397,19 +408,16 @@ impl DownloadCore {
 
         // 对于B站的音频流，总是使用Range请求，因为某些音频流不支持完整GET请求
         let should_use_range = start_pos > 0 || matches!(file_type, FileType::Audio);
-        
+
         if should_use_range {
             let range_header = if start_pos > 0 {
                 format!("bytes={}-", start_pos)
             } else {
-                format!("bytes=0-")  // 从头开始但使用Range请求
+                format!("bytes=0-") // 从头开始但使用Range请求
             };
-            
-            request_builder = request_builder.header(
-                reqwest::header::RANGE,
-                range_header.clone()
-            );
-            
+
+            request_builder = request_builder.header(reqwest::header::RANGE, range_header.clone());
+
             if start_pos > 0 {
                 debug!("使用断点续传，起始位置: {} 字节", start_pos);
                 debug!("发送Range请求头: {}", range_header);
@@ -433,14 +441,26 @@ impl DownloadCore {
         debug!("  Range请求: {}", should_use_range);
         debug!("响应详情:");
         debug!("  状态码: {}", response.status());
-        debug!("  Content-Length: {:?}", response.headers().get("content-length"));
-        debug!("  Content-Range: {:?}", response.headers().get("content-range"));
-        debug!("  Accept-Ranges: {:?}", response.headers().get("accept-ranges"));
-        debug!("  Content-Type: {:?}", response.headers().get("content-type"));
+        debug!(
+            "  Content-Length: {:?}",
+            response.headers().get("content-length")
+        );
+        debug!(
+            "  Content-Range: {:?}",
+            response.headers().get("content-range")
+        );
+        debug!(
+            "  Accept-Ranges: {:?}",
+            response.headers().get("accept-ranges")
+        );
+        debug!(
+            "  Content-Type: {:?}",
+            response.headers().get("content-type")
+        );
 
         // 检查响应状态
         Self::check_response_status(&response, url)?;
-        
+
         // 如果是206响应，解析Content-Range
         if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
             if let Some(content_range) = response.headers().get("content-range") {
@@ -467,52 +487,60 @@ impl DownloadCore {
                 .append(true)
                 .open(output_path)
                 .await
-                .map_err(DownloadError::IoError)?
+                .map_err(|e| DownloadError::IoError(e.to_string()))?
         } else {
             // 新下载：覆盖写入
             tokio::fs::File::create(output_path)
                 .await
-                .map_err(DownloadError::IoError)?
+                .map_err(|e| DownloadError::IoError(e.to_string()))?
         };
 
         let mut stream = response.bytes_stream();
         let mut downloaded = start_pos;
 
         // 设置下载超时和心跳检测
-        const CHUNK_TIMEOUT_SECONDS: u64 = 60;  // 增加到60秒超时
-        const HEARTBEAT_INTERVAL: usize = 100;   // 每100个chunk输出一次日志
+        const CHUNK_TIMEOUT_SECONDS: u64 = 60; // 增加到60秒超时
+        const HEARTBEAT_INTERVAL: usize = 100; // 每100个chunk输出一次日志
         let mut chunk_count = 0;
-        
+
         loop {
             let chunk_result = tokio::time::timeout(
                 tokio::time::Duration::from_secs(CHUNK_TIMEOUT_SECONDS),
-                stream.next()
-            ).await;
+                stream.next(),
+            )
+            .await;
 
             let chunk_option = match chunk_result {
                 Ok(opt) => opt,
                 Err(_) => {
-                    warn!("下载超时 ({}秒)，已下载 {:.1}MB", 
-                        CHUNK_TIMEOUT_SECONDS, downloaded as f64 / 1024.0 / 1024.0);
-                    return Err(DownloadError::StreamError(
-                        format!("下载超时 ({}秒)，网络连接可能中断", CHUNK_TIMEOUT_SECONDS)
-                    ));
+                    warn!(
+                        "下载超时 ({}秒)，已下载 {:.1}MB",
+                        CHUNK_TIMEOUT_SECONDS,
+                        downloaded as f64 / 1024.0 / 1024.0
+                    );
+                    return Err(DownloadError::StreamError(format!(
+                        "下载超时 ({}秒)，网络连接可能中断",
+                        CHUNK_TIMEOUT_SECONDS
+                    )));
                 }
             };
 
             let chunk = match chunk_option {
                 Some(Ok(chunk)) => chunk,
                 Some(Err(error)) => {
-                    warn!("流读取错误，已下载 {:.1}MB: {}", 
-                        downloaded as f64 / 1024.0 / 1024.0, error);
-                    return Err(DownloadError::StreamError(format!(
-                        "流读取错误: {}",
+                    warn!(
+                        "流读取错误，已下载 {:.1}MB: {}",
+                        downloaded as f64 / 1024.0 / 1024.0,
                         error
-                    )));
+                    );
+                    return Err(DownloadError::StreamError(format!("流读取错误: {}", error)));
                 }
                 None => {
                     // 流结束
-                    debug!("下载流正常结束，总计 {:.1}MB", downloaded as f64 / 1024.0 / 1024.0);
+                    debug!(
+                        "下载流正常结束，总计 {:.1}MB",
+                        downloaded as f64 / 1024.0 / 1024.0
+                    );
                     break;
                 }
             };
@@ -520,17 +548,22 @@ impl DownloadCore {
             // 写入数据
             file.write_all(&chunk)
                 .await
-                .map_err(DownloadError::IoError)?;
+                .map_err(|e| DownloadError::IoError(e.to_string()))?;
 
             downloaded += chunk.len() as u64;
             chunk_count += 1;
 
             // 定期输出下载状态（避免日志过多）
             if chunk_count % HEARTBEAT_INTERVAL == 0 {
-                debug!("下载中: {:.1}MB/{:.1}MB ({:.1}%)", 
+                debug!(
+                    "下载中: {:.1}MB/{:.1}MB ({:.1}%)",
                     downloaded as f64 / 1024.0 / 1024.0,
                     total_size as f64 / 1024.0 / 1024.0,
-                    if total_size > 0 { (downloaded as f64 / total_size as f64) * 100.0 } else { 0.0 }
+                    if total_size > 0 {
+                        (downloaded as f64 / total_size as f64) * 100.0
+                    } else {
+                        0.0
+                    }
                 );
             }
 
@@ -540,20 +573,26 @@ impl DownloadCore {
             }
 
             // 更新任务进度（减少锁争用）
-            if chunk_count % 50 == 0 {  // 每50个chunk更新一次任务进度
+            if chunk_count % 50 == 0 {
+                // 每50个chunk更新一次任务进度
                 let mut task_guard = task_lock.lock().await;
                 task_guard.downloaded = downloaded;
             }
 
             // 检查是否下载完成
             if total_size > 0 && downloaded >= total_size {
-                debug!("下载完成，达到预期大小: {:.1}MB", total_size as f64 / 1024.0 / 1024.0);
+                debug!(
+                    "下载完成，达到预期大小: {:.1}MB",
+                    total_size as f64 / 1024.0 / 1024.0
+                );
                 break;
             }
         }
 
         // 确保数据写入磁盘
-        file.flush().await.map_err(DownloadError::IoError)?;
+        file.flush()
+            .await
+            .map_err(|e| DownloadError::IoError(e.to_string()))?;
 
         // 最终更新任务进度
         {
@@ -566,8 +605,8 @@ impl DownloadCore {
             let missing_mb = (total_size - downloaded) as f64 / 1024.0 / 1024.0;
             warn!(
                 "下载不完整: {:.1}MB/{:.1}MB ({:.1}%)，还差 {:.1}MB",
-                downloaded as f64 / 1024.0 / 1024.0, 
-                total_size as f64 / 1024.0 / 1024.0, 
+                downloaded as f64 / 1024.0 / 1024.0,
+                total_size as f64 / 1024.0 / 1024.0,
                 (downloaded as f64 / total_size as f64) * 100.0,
                 missing_mb
             );
@@ -612,9 +651,8 @@ impl DownloadCore {
         Self::check_response_status(&response, url)?;
 
         // 检查响应状态并处理特殊情况
-        Self::check_response_status(&response, url).map_err(|e| {
-            DownloadError::InvalidState(format!("响应状态检查失败: {}", e))
-        })?;
+        Self::check_response_status(&response, url)
+            .map_err(|e| DownloadError::InvalidState(format!("响应状态检查失败: {}", e)))?;
 
         // 检查内容编码
         let content_encoding = response
@@ -638,17 +676,17 @@ impl DownloadCore {
 
         // 解码内容
         let (decoded, _, had_errors) = encoding.decode(&decompressed_bytes);
-        
+
         if had_errors {
             warn!("文本解码过程中发现错误，可能存在字符丢失");
         }
 
         debug!("文本内容长度: {} 字节", decoded.len());
-        
+
         // 写入文件
         tokio::fs::write(output_path, decoded.into_owned())
             .await
-            .map_err(DownloadError::IoError)?;
+            .map_err(|e| DownloadError::IoError(e.to_string()))?;
 
         debug!("文本内容下载完成: {}", output_path.display());
         Ok(())
@@ -672,9 +710,8 @@ impl DownloadCore {
         Self::check_response_status(&response, url)?;
 
         // 检查响应状态并处理特殊情况
-        Self::check_response_status(&response, url).map_err(|e| {
-            DownloadError::InvalidState(format!("响应状态检查失败: {}", e))
-        })?;
+        Self::check_response_status(&response, url)
+            .map_err(|e| DownloadError::InvalidState(format!("响应状态检查失败: {}", e)))?;
 
         // 检查内容编码（图片通常不会压缩，但以防万一）
         let content_encoding = response
@@ -696,41 +733,46 @@ impl DownloadCore {
         // 写入文件
         tokio::fs::write(output_path, &final_bytes)
             .await
-            .map_err(DownloadError::IoError)?;
+            .map_err(|e| DownloadError::IoError(e.to_string()))?;
 
         debug!("图片下载完成: {}", output_path.display());
         Ok(())
     }
 
     // 解压缩内容的辅助函数
-    fn decompress_content(bytes: &[u8], content_encoding: Option<&str>) -> Result<Vec<u8>, DownloadError> {
+    fn decompress_content(
+        bytes: &[u8],
+        content_encoding: Option<&str>,
+    ) -> Result<Vec<u8>, DownloadError> {
         match content_encoding {
             Some("deflate") => {
                 debug!("检测到 deflate 压缩，开始解压缩");
                 let mut decoder = DeflateDecoder::new(bytes);
                 let mut decompressed = Vec::new();
-                decoder.read_to_end(&mut decompressed)
-                    .map_err(|e| DownloadError::InvalidState(format!("deflate 解压缩失败: {}", e)))?;
+                decoder.read_to_end(&mut decompressed).map_err(|e| {
+                    DownloadError::InvalidState(format!("deflate 解压缩失败: {}", e))
+                })?;
                 Ok(decompressed)
-            },
+            }
             Some("gzip") => {
                 debug!("检测到 gzip 压缩，开始解压缩");
                 let mut decoder = GzDecoder::new(bytes);
                 let mut decompressed = Vec::new();
-                decoder.read_to_end(&mut decompressed)
+                decoder
+                    .read_to_end(&mut decompressed)
                     .map_err(|e| DownloadError::InvalidState(format!("gzip 解压缩失败: {}", e)))?;
                 Ok(decompressed)
-            },
+            }
             Some("br") => {
                 debug!("检测到 brotli 压缩，reqwest 应该自动处理");
                 // Brotli 通常由 reqwest 自动处理，如果到这里说明可能需要手动处理
                 // 但我们暂时返回原始数据，因为 reqwest 通常会处理这种情况
                 Ok(bytes.to_vec())
-            },
+            }
             Some(encoding) => {
                 warn!("未知的内容编码: {}", encoding);
                 Ok(bytes.to_vec())
-            },
+            }
             None => {
                 debug!("无压缩编码");
                 Ok(bytes.to_vec())
@@ -742,57 +784,57 @@ impl DownloadCore {
     fn check_response_status(response: &reqwest::Response, url: &str) -> Result<(), DownloadError> {
         let status = response.status();
         debug!("Response Status: {}", status);
-        
+
         match status {
             // 成功状态码
             reqwest::StatusCode::OK => {
                 debug!("✅ 响应状态正常: {} (完整内容)", status);
                 Ok(())
-            },
+            }
             reqwest::StatusCode::PARTIAL_CONTENT => {
                 debug!("✅ 响应状态正常: {} (部分内容/断点续传)", status);
                 Ok(())
-            },
+            }
             // 风控相关错误
             reqwest::StatusCode::FORBIDDEN => {
                 warn!("🚫 检测到 403 Forbidden 状态码，可能触发了风控机制");
-                
+
                 // 进行详细的403错误分析
                 let analysis = Self::analyze_403_error(url, response);
                 warn!("{}", analysis);
-                
+
                 warn!("💡 建议：等待一段时间后重试，或检查 cookies 是否有效");
                 Err(DownloadError::RateLimited(format!(
-                    "访问被拒绝 (403 Forbidden)，URL: {}，可能触发了风控机制。{}", 
+                    "访问被拒绝 (403 Forbidden)，URL: {}，可能触发了风控机制。{}",
                     url, analysis
                 )))
-            },
+            }
             reqwest::StatusCode::TOO_MANY_REQUESTS => {
                 warn!("⚠️ 检测到 429 Too Many Requests 状态码，请求过于频繁");
                 Err(DownloadError::RateLimited(format!(
-                    "请求过于频繁 (429 Too Many Requests)，URL: {}，请降低请求频率", 
+                    "请求过于频繁 (429 Too Many Requests)，URL: {}，请降低请求频率",
                     url
                 )))
-            },
+            }
             reqwest::StatusCode::UNAUTHORIZED => {
                 warn!("🔐 检测到 401 Unauthorized 状态码，认证失败");
                 Err(DownloadError::RateLimited(format!(
-                    "认证失败 (401 Unauthorized)，URL: {}，请检查登录状态", 
+                    "认证失败 (401 Unauthorized)，URL: {}，请检查登录状态",
                     url
                 )))
-            },
+            }
             // 范围请求错误
             reqwest::StatusCode::RANGE_NOT_SATISFIABLE => {
                 warn!("📏 检测到 416 Range Not Satisfiable，范围请求无效");
                 Err(DownloadError::InvalidState(format!(
-                    "范围请求无效 (416 Range Not Satisfiable)，URL: {}，可能文件已完整下载", 
+                    "范围请求无效 (416 Range Not Satisfiable)，URL: {}，可能文件已完整下载",
                     url
                 )))
-            },
+            }
             // 404 Not Found 错误
             reqwest::StatusCode::NOT_FOUND => {
                 warn!("🔍 检测到 404 Not Found 状态码");
-                
+
                 // 检查是否是B站音频流URL
                 if url.contains("bilivideo.com") || url.contains("bilivideo.cn") {
                     if url.contains("audio") || url.contains("30280") || url.contains("30232") {
@@ -800,22 +842,22 @@ impl DownloadCore {
                         warn!("💡 建议：尝试使用Range请求头 'bytes=0-' 进行下载");
                     }
                 }
-                
+
                 Err(DownloadError::InvalidState(format!(
-                    "资源不存在 (404 Not Found)，URL: {}。可能原因：1. URL已失效 2. 需要Range请求头 3. 权限不足", 
+                    "资源不存在 (404 Not Found)，URL: {}。可能原因：1. URL已失效 2. 需要Range请求头 3. 权限不足",
                     url
                 )))
-            },
+            }
             // 其他成功状态
             status if status.is_success() => {
                 debug!("✅ 响应状态正常: {}", status);
                 Ok(())
-            },
+            }
             // 其他错误
             _ => {
                 warn!("❌ 非成功状态码: {}", status);
                 Err(DownloadError::InvalidState(format!(
-                    "HTTP 请求失败，状态码: {}，URL: {}", 
+                    "HTTP 请求失败，状态码: {}，URL: {}",
                     status, url
                 )))
             }
@@ -825,13 +867,13 @@ impl DownloadCore {
     // 详细分析403错误的原因
     fn analyze_403_error(url: &str, _response: &reqwest::Response) -> String {
         let mut analysis = Vec::new();
-        
+
         // 检查URL类型
         if url.contains("bilivideo.com") || url.contains("bilivideo.cn") {
             analysis.push("✓ 这是B站CDN地址，需要特殊的请求头");
             analysis.push("❌ 可能缺少必需的请求头：Origin, Sec-Fetch-Dest, Sec-Fetch-Mode");
         }
-        
+
         // 常见的403原因分析
         analysis.push("🔍 可能的原因分析：");
         analysis.push("  1. Cookie过期或无效 - 请重新登录获取新的Cookie");
@@ -840,7 +882,7 @@ impl DownloadCore {
         analysis.push("  4. IP被临时封禁 - 更换网络或等待解封");
         analysis.push("  5. 高清视频需要大会员 - 检查账号权限");
         analysis.push("  6. 地区限制 - 某些内容可能有地理限制");
-        
+
         // 解决建议
         analysis.push("💡 解决建议：");
         analysis.push("  • 检查并更新Cookie (SESSDATA等关键字段)");
@@ -848,7 +890,7 @@ impl DownloadCore {
         analysis.push("  • 确保User-Agent模拟真实浏览器");
         analysis.push("  • 尝试使用不同的视频质量");
         analysis.push("  • 等待10-30分钟后重试");
-        
+
         format!("403 Forbidden 详细分析:\n{}", analysis.join("\n"))
     }
 }
@@ -905,18 +947,23 @@ pub struct DownloadContent {
 }
 
 // 获取内容信息（内容类型、大小等）
-async fn get_content_info(client: &BiliClient, url: &str) -> Result<DownloadContent, DownloadError> {
+async fn get_content_info(
+    client: &BiliClient,
+    url: &str,
+) -> Result<DownloadContent, DownloadError> {
     // 检查是否是B站的视频/音频流URL，如果是则使用专用请求头
     let resp = if url.contains("bilivideo.com") || url.contains("bilivideo.cn") {
         debug!("检测到B站CDN地址，使用视频下载专用请求头");
-        client.inner
+        client
+            .inner
             .head(url)
             .headers(BiliClient::get_video_download_headers(url))
             .send()
             .await
             .map_err(DownloadError::HttpError)?
     } else {
-        client.inner
+        client
+            .inner
             .head(url)
             .send()
             .await
@@ -927,36 +974,40 @@ async fn get_content_info(client: &BiliClient, url: &str) -> Result<DownloadCont
     let status = resp.status();
     debug!("URL: {}", url);
     debug!("Response Status: {}", status);
-    
+
     // 如果HEAD请求失败，尝试用GET请求获取部分内容来获取信息
-    if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::METHOD_NOT_ALLOWED {
-        warn!("HEAD 请求失败 (状态码: {})，尝试使用 GET 请求获取内容信息", status);
+    if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::METHOD_NOT_ALLOWED
+    {
+        warn!(
+            "HEAD 请求失败 (状态码: {})，尝试使用 GET 请求获取内容信息",
+            status
+        );
         return get_content_info_via_get(client, url).await;
     }
-    
+
     // 特别处理风控情况
     match status {
         reqwest::StatusCode::FORBIDDEN => {
             warn!("🚫 HEAD 请求遇到 403 Forbidden，可能触发了风控机制");
             return Err(DownloadError::RateLimited(format!(
-                "获取内容信息时访问被拒绝 (403 Forbidden)，URL: {}", 
+                "获取内容信息时访问被拒绝 (403 Forbidden)，URL: {}",
                 url
             )));
-        },
+        }
         reqwest::StatusCode::TOO_MANY_REQUESTS => {
             warn!("⚠️ HEAD 请求遇到 429 Too Many Requests");
             return Err(DownloadError::RateLimited(format!(
-                "获取内容信息时请求过于频繁 (429 Too Many Requests)，URL: {}", 
+                "获取内容信息时请求过于频繁 (429 Too Many Requests)，URL: {}",
                 url
             )));
-        },
+        }
         _ if !status.is_success() => {
             warn!("❌ HEAD 请求失败，状态码: {}", status);
             return Err(DownloadError::InvalidState(format!(
-                "获取内容信息失败，状态码: {}，URL: {}", 
+                "获取内容信息失败，状态码: {}，URL: {}",
                 status, url
             )));
-        },
+        }
         _ => {
             debug!("✅ HEAD 请求成功");
         }
@@ -996,22 +1047,27 @@ async fn get_content_info(client: &BiliClient, url: &str) -> Result<DownloadCont
 }
 
 // 通过GET请求获取内容信息（当HEAD请求失败时的备用方案）
-async fn get_content_info_via_get(client: &BiliClient, url: &str) -> Result<DownloadContent, DownloadError> {
+async fn get_content_info_via_get(
+    client: &BiliClient,
+    url: &str,
+) -> Result<DownloadContent, DownloadError> {
     debug!("使用 GET 请求获取内容信息: {}", url);
-    
+
     // 构建请求，使用Range头只请求前1024字节来获取头信息
     let resp = if url.contains("bilivideo.com") || url.contains("bilivideo.cn") {
-        client.inner
+        client
+            .inner
             .get(url)
             .headers(BiliClient::get_video_download_headers(url))
-            .header(reqwest::header::RANGE, "bytes=0-1023")  // 只请求前1KB
+            .header(reqwest::header::RANGE, "bytes=0-1023") // 只请求前1KB
             .send()
             .await
             .map_err(DownloadError::HttpError)?
     } else {
-        client.inner
+        client
+            .inner
             .get(url)
-            .header(reqwest::header::RANGE, "bytes=0-1023")  // 只请求前1KB
+            .header(reqwest::header::RANGE, "bytes=0-1023") // 只请求前1KB
             .send()
             .await
             .map_err(DownloadError::HttpError)?
@@ -1019,23 +1075,23 @@ async fn get_content_info_via_get(client: &BiliClient, url: &str) -> Result<Down
 
     let status = resp.status();
     debug!("GET 请求状态: {}", status);
-    
+
     // 检查状态码（206 Partial Content 或 200 OK 都是正常的）
     match status {
         reqwest::StatusCode::OK | reqwest::StatusCode::PARTIAL_CONTENT => {
             debug!("✅ GET 请求成功");
-        },
+        }
         reqwest::StatusCode::FORBIDDEN => {
             warn!("🚫 GET 请求遇到 403 Forbidden");
             return Err(DownloadError::RateLimited(format!(
-                "GET 请求访问被拒绝 (403 Forbidden)，URL: {}", 
+                "GET 请求访问被拒绝 (403 Forbidden)，URL: {}",
                 url
             )));
-        },
+        }
         _ => {
             warn!("❌ GET 请求失败，状态码: {}", status);
             return Err(DownloadError::InvalidState(format!(
-                "GET 请求失败，状态码: {}，URL: {}", 
+                "GET 请求失败，状态码: {}，URL: {}",
                 status, url
             )));
         }
@@ -1084,4 +1140,3 @@ async fn get_content_info_via_get(client: &BiliClient, url: &str) -> Result<Down
         is_text,
     })
 }
-
