@@ -87,12 +87,13 @@ impl fmt::Display for UrlType {
 }
 
 // 视频清晰度选项
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub enum VideoQuality {
     Q360P = 16,     // 流畅 360P
     Q480P = 32,     // 清晰 480P
     Q720P = 64,     // 高清 720P
     Q720P60 = 74,   // 高清 720P60
+    #[default]
     Q1080P = 80,    // 高清 1080P
     Q1080PP = 112,  // 高清 1080P+
     Q1080P60 = 116, // 高清 1080P60
@@ -101,11 +102,6 @@ pub enum VideoQuality {
     Q8K = 127,      // 超高清 8K
 }
 
-impl Default for VideoQuality {
-    fn default() -> Self {
-        Self::Q1080P // 默认选择 1080P
-    }
-}
 
 pub enum AudioQuality {
     Quality64k = 30216,

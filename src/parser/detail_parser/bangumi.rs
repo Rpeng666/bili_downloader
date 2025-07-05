@@ -114,8 +114,34 @@ impl<'a> BangumiParser<'a> {
 
         debug!("获取到的番剧信息: {:?}", resp);
 
+        // 检查API返回的错误码
+        if resp.code != 0 {
+            return match resp.code {
+                -403 => Err(ParseError::ParseError(format!(
+                    "番剧访问被拒绝（-403）: {}。可能原因：1. 番剧需要大会员权限 2. 地区限制 3. 需要登录", 
+                    resp.message
+                ))),
+                -404 => Err(ParseError::ParseError(format!(
+                    "番剧不存在（-404）: {}。番剧可能已下架或URL错误", 
+                    resp.message
+                ))),
+                -10403 => Err(ParseError::ParseError(format!(
+                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号", 
+                    resp.message
+                ))),
+                6001 => Err(ParseError::ParseError(format!(
+                    "地区限制（6001）: {}。此番剧在当前地区不可观看", 
+                    resp.message
+                ))),
+                _ => Err(ParseError::ParseError(format!(
+                    "番剧API返回错误（{}）: {}", 
+                    resp.code, resp.message
+                ))),
+            };
+        }
+
         resp.result
-            .ok_or_else(|| ParseError::ParseError("未找到番剧信息".to_string()))
+            .ok_or_else(|| ParseError::ParseError("API响应中未找到番剧信息".to_string()))
     }
 
     // 获取播放地址
@@ -138,8 +164,34 @@ impl<'a> BangumiParser<'a> {
             .await
             .map_err(|e| ParseError::NetworkError(e.to_string()))?;
 
+        // 检查API返回的错误码
+        if resp.code != 0 {
+            return match resp.code {
+                -403 => Err(ParseError::ParseError(format!(
+                    "番剧播放地址获取被拒绝（-403）: {}。可能原因：1. 需要大会员权限 2. Cookie已过期 3. 需要登录", 
+                    resp.message
+                ))),
+                -404 => Err(ParseError::ParseError(format!(
+                    "番剧播放地址不存在（-404）: {}。番剧可能已下架", 
+                    resp.message
+                ))),
+                -10403 => Err(ParseError::ParseError(format!(
+                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号", 
+                    resp.message
+                ))),
+                6001 => Err(ParseError::ParseError(format!(
+                    "地区限制（6001）: {}。此番剧在当前地区不可观看", 
+                    resp.message
+                ))),
+                _ => Err(ParseError::ParseError(format!(
+                    "番剧播放地址API返回错误（{}）: {}", 
+                    resp.code, resp.message
+                ))),
+            };
+        }
+
         resp.result
-            .ok_or_else(|| ParseError::ParseError("未找到播放地址信息".to_string()))
+            .ok_or_else(|| ParseError::ParseError("API响应中未找到播放地址信息".to_string()))
     }
 
     // 创建单集视频的元数据
