@@ -51,6 +51,7 @@ pub enum TaskStatus {
     Completed,
     Failed,
     Error(String),
+    Skipped(String), // 跳过任务，包含跳过原因
 }
 
 pub struct DownloadProgress {

@@ -6,19 +6,11 @@ use tracing::{debug, info};
 
 use crate::Result;
 use crate::common::client::client::BiliClient;
-use crate::downloader::models::{DownloadTask, TaskStatus};
+use crate::downloader::models::{DownloadTask, FileType, TaskStatus};
 
 pub mod core;
 pub mod error;
 pub mod models;
-
-// 定义一个特征来获取视频信息
-pub trait HasVideoInfo {
-    fn get_bvid(&self) -> &str;
-    fn get_title(&self) -> &str;
-    fn get_video_url(&self) -> &str;
-    fn get_audio_url(&self) -> &str;
-}
 
 pub struct VideoDownloader {
     download_manager: DownloadCore,
@@ -35,13 +27,24 @@ impl VideoDownloader {
         debug!("task: {:?}", task);
 
         for t in task {
-            self.download_file(t.url.clone(), t.name.clone(), t.output_path.clone())
-                .await?;
+            self.download_file(
+                t.url.clone(),
+                t.name.clone(),
+                t.output_path.clone(),
+                t.file_type.clone(),
+            )
+            .await?;
         }
         Ok(())
     }
 
-    async fn download_file(&self, url: String, name: String, output_path: String) -> Result<()> {
+    async fn download_file(
+        &self,
+        url: String,
+        name: String,
+        output_path: String,
+        file_type: FileType,
+    ) -> Result<()> {
         info!("------------------------------------------------------");
         info!("开始下载 {} ... ", name);
 
@@ -50,14 +53,15 @@ impl VideoDownloader {
         if let Some(parent) = download_file_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        self.start_download(&url, &download_file_path).await?;
+        self.start_download(&url, &download_file_path, &file_type)
+            .await?;
 
         info!("下载完成！ {}", name);
         Ok(())
     }
 
-    async fn start_download(&self, url: &str, path: &PathBuf) -> Result<()> {
-        let task_id = self.download_manager.add_task(url, path).await?;
+    async fn start_download(&self, url: &str, path: &PathBuf, file_type: &FileType) -> Result<()> {
+        let task_id = self.download_manager.add_task(url, path, file_type).await?;
 
         loop {
             let status = self.download_manager.get_task_status(&task_id).await;

@@ -26,6 +26,8 @@ pub enum DownloadError {
     FfmpegNotFound,
     /// 信号量错误
     SemaphoreError,
+    /// 风控错误 (403 Forbidden)
+    RateLimited(String),
 }
 
 impl fmt::Display for DownloadError {
@@ -43,6 +45,7 @@ impl fmt::Display for DownloadError {
             DownloadError::FfmpegNotFound => write!(f, "ffmpeg未找到，请安装ffmpeg"),
             DownloadError::MergeError(msg) => write!(f, "合并错误: {}", msg),
             DownloadError::StreamError(msg) => write!(f, "流错误: {}", msg),
+            DownloadError::RateLimited(msg) => write!(f, "访问受限 (403 Forbidden): {}", msg),
         }
     }
 }

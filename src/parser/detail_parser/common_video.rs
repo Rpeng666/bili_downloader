@@ -162,7 +162,7 @@ impl<'a> CommonVideoParser<'a> {
                 danmaku_download_url,
                 FileType::Danmaku,
                 video_info.title.clone() + ".xml",
-                video_info.title.clone(),
+                format!("./tmp/{}-danmaku.xml", video_info.title),
                 video_info.cid.to_string(),
                 HashMap::from([("desc".to_string(), video_info.desc.clone())]),
             ))
@@ -181,7 +181,7 @@ impl<'a> CommonVideoParser<'a> {
                         video_url,
                         FileType::Video,
                         video_info.title.clone() + ".mp4",
-                        video_info.title.clone(),
+                        format!("./tmp/{}-video.mp4", video_info.title),
                         video_info.cid.to_string(),
                         HashMap::from([("desc".to_string(), video_info.desc.clone())]),
                     )
@@ -201,8 +201,8 @@ impl<'a> CommonVideoParser<'a> {
                     DownloadTask::new(
                         audio_url,
                         FileType::Audio,
-                        video_info.title.clone() + ".mp4",
-                        video_info.title.clone(),
+                        video_info.title.clone() + ".mp3",
+                        format!("./tmp/{}-audio.mp3", video_info.title),
                         video_info.cid.to_string(),
                         HashMap::from([("desc".to_string(), video_info.desc.clone())]),
                     )
@@ -228,7 +228,7 @@ impl<'a> CommonVideoParser<'a> {
                         mp4_info,
                         FileType::Video,
                         video_info.title.clone() + ".mp4",
-                        video_info.title.clone(),
+                        format!("./tmp/{}-durl-video.mp4", video_info.title),
                         video_info.cid.to_string(),
                         HashMap::from([("desc".to_string(), video_info.desc.clone())]),
                     )
