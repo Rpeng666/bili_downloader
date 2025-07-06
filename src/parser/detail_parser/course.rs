@@ -235,7 +235,7 @@ impl<'a> CourseParser<'a> {
             Some(DownloadTask {
                 url: audio_url.base_url.clone(),
                 file_type: FileType::Audio,
-                name: format!("{} - {} - {}", title, episode.title, audio_url.id),
+                name: format!("{} - {}.m4s", title, episode.title),
                 output_path: format!("./tmp/{}-{}.m4s", title, episode.title),
                 temp_path: config.output_dir.clone(),
                 metadata: HashMap::new(),

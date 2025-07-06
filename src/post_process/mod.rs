@@ -214,14 +214,16 @@ async fn process_single_episode(
                 is_durl_format
             ).await?;
         }
-        ParserOptions::Course { .. } => {
+        ParserOptions::Course { config } => {
             debug!("使用课程配置处理");
             // 课程视频通常是单一流，直接移动
-            if let Some(video_task) = video_tasks.first() {
-                move_single_file(video_task, "课程视频").await?;
-            } else if let Some(audio_task) = audio_tasks.first() {
-                move_single_file(audio_task, "课程音频").await?;
-            }
+            handle_media_processing(
+                video_tasks.first().copied(), 
+                audio_tasks.first().copied(), 
+                config, 
+                is_dash_format, 
+                is_durl_format
+            ).await?;
         }
     }
     
