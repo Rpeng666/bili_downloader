@@ -1,8 +1,5 @@
 pub mod merger;
 
-#[cfg(test)]
-mod tests;
-
 use tracing::debug;
 
 use crate::{

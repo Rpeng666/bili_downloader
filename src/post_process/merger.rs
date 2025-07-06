@@ -1,6 +1,7 @@
 use std::path::Path;
+use std::process::Stdio;
 use tokio::process::Command;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::downloader::error::DownloadError;
 
@@ -16,30 +17,31 @@ impl MediaMerger {
         if !video_path.exists() {
             return Err(DownloadError::FileNotFound(video_path.to_path_buf()));
         }
-
-        debug!("检查视频文件: {:?}", video_path);
+        debug!("✅ 视频文件存在: {:?}", video_path);
 
         if !audio_path.exists() {
             return Err(DownloadError::FileNotFound(audio_path.to_path_buf()));
         }
-        debug!("检查音频文件: {:?}", audio_path);
+        debug!("✅ 音频文件存在: {:?}", audio_path);
 
-        debug!("开始合并视频和音频到: {:?}", output_path);
-
-        // 检查ffmpeg是否安装
-        if Command::new("ffmpeg")
+        // 检查 ffmpeg 是否可用
+        debug!("检查系统中是否安装了 ffmpeg...");
+        let ffmpeg_check = Command::new("ffmpeg")
             .arg("-version")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
-            .await
-            .is_err()
-        {
+            .await;
+
+        if ffmpeg_check.is_err() || !ffmpeg_check.unwrap().success() {
+            error!("❌ 未检测到 ffmpeg，请确保系统中已安装并配置了 ffmpeg 可执行路径。");
+            error!("安装方法参考：https://ffmpeg.org/download.html");
             return Err(DownloadError::FfmpegNotFound);
         }
 
-        // 使用ffmpeg命令行工具合并视频和音频
+        debug!("开始合并视频和音频 -> 输出路径: {:?}", output_path);
+
         let output = Command::new("ffmpeg")
             .arg("-i")
             .arg(video_path)
@@ -51,17 +53,29 @@ impl MediaMerger {
             .arg("aac") // 使用AAC编码音频
             .arg("-y") // 自动覆盖
             .arg(output_path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
             .output()
             .await?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
-            error!("ffmpeg 执行失败，日志如下：\n{}", err_msg);
+            error!("❌ ffmpeg 合并失败，错误日志如下：\n{}", err_msg);
+
+            // 加入用户友好的提示
+            error!(
+                "请检查以下几点：\n\
+                1. 输入文件路径是否正确；\n\
+                2. 视频/音频文件编码格式是否兼容；\n\
+                3. 是否有写入权限到输出路径：{:?};",
+                output_path
+            );
+
             return Err(DownloadError::FfmpegError(err_msg.to_string()));
         }
+
+        info!("✅ 视频与音频合并成功，输出文件: {:?}", output_path);
         Ok(())
     }
 }
