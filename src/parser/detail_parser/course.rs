@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 
-use crate::common::{
-    client::client::BiliClient, client::models::common::CommonResponse,
-    download_type::dash::DashVideoInfo, download_type::mp4::Mp4VideoInfo, models::DownloadType,
-};
-use crate::parser::detail_parser::models::{CourseEpisode, CourseInfo};
+use crate::common::models::{DownloadType, ParsedMeta};
+use crate::common::{client::client::BiliClient, client::models::common::CommonResponse};
+use crate::downloader::models::{DownloadTask, FileType};
+use crate::parser::detail_parser::models::{CourseEpisode, CourseInfo, DashItem, DownloadConfig};
 use crate::parser::detail_parser::parser_trait::{ParserOptions, parse_episode_range};
+use crate::parser::models::{UrlType, VideoQuality};
 use crate::parser::{
     detail_parser::{Parser, models::PlayUrlData},
     errors::ParseError,
-    models::{ParsedMeta, StreamType, UrlType},
 };
 use async_trait::async_trait;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct CourseParser<'a> {
     client: &'a BiliClient,
@@ -54,19 +53,19 @@ impl<'a> CourseParser<'a> {
         if resp.code != 0 {
             return match resp.code {
                 -403 => Err(ParseError::ParseError(format!(
-                    "课程访问被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. 需要登录 3. 权限不足", 
+                    "课程访问被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. 需要登录 3. 权限不足",
                     resp.message
                 ))),
                 -404 => Err(ParseError::ParseError(format!(
-                    "课程不存在（-404）: {}。课程可能已下架或URL错误", 
+                    "课程不存在（-404）: {}。课程可能已下架或URL错误",
                     resp.message
                 ))),
                 -500 => Err(ParseError::ParseError(format!(
-                    "课程访问限制（-500）: {}。课程可能需要购买或特定权限", 
+                    "课程访问限制（-500）: {}。课程可能需要购买或特定权限",
                     resp.message
                 ))),
                 _ => Err(ParseError::ParseError(format!(
-                    "课程API返回错误（{}）: {}", 
+                    "课程API返回错误（{}）: {}",
                     resp.code, resp.message
                 ))),
             };
@@ -106,19 +105,19 @@ impl<'a> CourseParser<'a> {
         if resp.code != 0 {
             return match resp.code {
                 -403 => Err(ParseError::ParseError(format!(
-                    "课程播放地址获取被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. Cookie已过期 3. 需要登录", 
+                    "课程播放地址获取被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. Cookie已过期 3. 需要登录",
                     resp.message
                 ))),
                 -404 => Err(ParseError::ParseError(format!(
-                    "课程播放地址不存在（-404）: {}。课程可能已下架", 
+                    "课程播放地址不存在（-404）: {}。课程可能已下架",
                     resp.message
                 ))),
                 -500 => Err(ParseError::ParseError(format!(
-                    "课程播放限制（-500）: {}。课程可能需要购买或特定权限", 
+                    "课程播放限制（-500）: {}。课程可能需要购买或特定权限",
                     resp.message
                 ))),
                 _ => Err(ParseError::ParseError(format!(
-                    "课程播放地址API返回错误（{}）: {}", 
+                    "课程播放地址API返回错误（{}）: {}",
                     resp.code, resp.message
                 ))),
             };
@@ -128,189 +127,175 @@ impl<'a> CourseParser<'a> {
             .ok_or_else(|| ParseError::ParseError("API响应中未找到播放地址信息".to_string()))
     }
 
-    // 处理单集课程
-    async fn handle_episode(&self, ep_id: &str) -> Result<ParsedMeta, ParseError> {
-        let course_info = self.get_course_info(None, Some(ep_id)).await?;
-
-        // 从课程列表中找到当前集
-        let episode = course_info
-            .episodes
-            .iter()
-            .find(|ep| ep.id.to_string() == ep_id)
-            .ok_or_else(|| ParseError::ParseError("未找到章节信息".to_string()))?;
-
-        self.create_video_meta(&course_info, episode).await
-    }
-
-    // 处理整季课程
-    pub async fn get_season_info(&self, season_id: &str) -> Result<CourseInfo, ParseError> {
-        self.get_course_info(Some(season_id), None).await
-    }
-
-    // 处理选定的课程集数
-    pub async fn handle_selected_episodes(
+    fn select_video_stream(
         &self,
-        season_id: &str,
-        ep_ids: &[i64],
-    ) -> Result<Vec<ParsedMeta>, ParseError> {
-        let course_info = self.get_course_info(Some(season_id), None).await?;
-
-        let mut results = Vec::new();
-        for ep_id in ep_ids {
-            if let Some(episode) = course_info.episodes.iter().find(|ep| ep.id == *ep_id) {
-                match self.create_video_meta(&course_info, episode).await {
-                    Ok(meta) => results.push(meta),
-                    Err(e) => debug!("处理章节 {} 失败: {:?}", ep_id, e),
-                }
-            }
+        streams: &[DashItem],
+        resolution: VideoQuality,
+    ) -> Result<Option<String>, ParseError> {
+        if streams.is_empty() {
+            return Err(ParseError::ParseError(
+                "没有可用的视频流。可能原因：1. 视频需要大会员权限 2. 当前清晰度不可用 3. Cookie已过期，请重新登录".to_string()
+            ));
         }
 
-        if results.is_empty() {
-            Err(ParseError::ParseError(
-                "没有成功解析任何选中的章节".to_string(),
-            ))
-        } else {
-            Ok(results)
+        debug!("可用的视频流数量: {}", streams.len());
+        for (i, stream) in streams.iter().enumerate() {
+            debug!(
+                "流 {}: 清晰度ID={}, width={:?}, height={:?}",
+                i, stream.id, stream.width, stream.height
+            );
         }
+
+        let target_quality_id = resolution as i32;
+        debug!("目标清晰度ID: {}", target_quality_id);
+
+        // 首先尝试精确匹配清晰度ID
+        if let Some(stream) = streams.iter().find(|s| s.id == target_quality_id) {
+            debug!("找到精确匹配的清晰度: ID={}", stream.id);
+            return Ok(Some(stream.base_url.clone()));
+        }
+
+        // 如果没有精确匹配，选择最接近且不超过目标清晰度的流
+        let mut suitable_streams: Vec<_> = streams
+            .iter()
+            .filter(|s| s.id <= target_quality_id)
+            .collect();
+
+        if !suitable_streams.is_empty() {
+            // 按清晰度ID降序排序，选择最高的
+            suitable_streams.sort_by(|a, b| b.id.cmp(&a.id));
+            let selected = suitable_streams[0];
+            debug!(
+                "选择最接近的清晰度: ID={} (目标: {})",
+                selected.id, target_quality_id
+            );
+            return Ok(Some(selected.base_url.clone()));
+        }
+
+        // 如果所有流的清晰度都高于目标，选择最低的
+        let mut all_streams = streams.to_vec();
+        all_streams.sort_by(|a, b| a.id.cmp(&b.id));
+        let fallback = &all_streams[0];
+
+        // 检查是否是高质量视频权限问题
+        let highest_available_quality = all_streams.last().map(|s| s.id).unwrap_or(0);
+        if target_quality_id >= 112 && highest_available_quality < target_quality_id {
+            // 112是1080P+
+            warn!(
+                "目标清晰度 {} 可能需要大会员权限，最高可用清晰度: {}",
+                target_quality_id, highest_available_quality
+            );
+            warn!("💡 提示：1080P+、4K等高清晰度通常需要大会员权限，请确保已登录大会员账号");
+        }
+
+        debug!("目标清晰度过低，降级到最低可用清晰度: ID={}", fallback.id);
+
+        Ok(Some(fallback.base_url.clone()))
     }
 
-    // 根据课程信息创建视频元数据
+    // 根据单集课程信息创建视频元数据
     async fn create_video_meta(
         &self,
-        course_info: &CourseInfo,
+        title: &str,
         episode: &CourseEpisode,
-        quality: VideoQuality,
-    ) -> Result<ParsedMeta, ParseError> {
+        config: &DownloadConfig,
+    ) -> Result<Vec<DownloadTask>, ParseError> {
         let play_info = self
             .get_play_url(episode.id, episode.aid, episode.cid)
             .await?;
 
-        if let Some(dash_info) = play_info.dash {
-            // 根据要求的质量选择视频流
-            let video_stream = dash_info
-                .video
-                .iter()
-                .filter(|v| v.quality <= quality as i32)
-                .max_by_key(|v| v.quality)
-                .ok_or_else(|| ParseError::ParseError("未找到所选质量的视频流".to_string()))?;
+        let mut download_task_vec: Vec<DownloadTask> = Vec::new();
 
-            let audio_stream = dash_info
-                .audio
-                .iter()
-                .max_by_key(|a| a.quality)
-                .ok_or_else(|| ParseError::ParseError("未找到可用的音频流".to_string()))?;
+        // --------------------------------------------------------------------
+        let video_stream_task = if config.need_video && play_info.dash.is_some() {
+            self.select_video_stream(&play_info.dash.as_ref().unwrap().video, config.resolution)?
+                .map(|video_url| {
+                    DownloadTask::new(
+                        video_url,
+                        FileType::Video,
+                        format!("{} - {}.mp4", title, episode.title),
+                        format!("./tmp/{}-{}.mp4", title, episode.title),
+                        config.output_dir.clone(),
+                        HashMap::new(),
+                    )
+                })
+        } else {
+            None
+        };
 
-            // 构建视频信息
-            let video_info = DashVideoInfo {
-                url: format!("https://www.bilibili.com/cheese/play/ep{}", episode.id),
-                aid: episode.aid,
-                bvid: format!("cheese_{}", episode.id),
-                cid: episode.cid,
-                title: format!("{} - {}", course_info.title, episode.title),
-                cover: course_info.cover.clone(),
-                desc: "".to_string(),
-                views: String::new(),
-                danmakus: String::new(),
-                up_name: String::new(),
-                up_mid: 0,
-                video_quality_id_list: vec![video_stream.quality as i32],
-                video_url: video_stream.base_url.clone(),
-                audio_url: audio_stream.base_url.clone(),
-            };
-
-            Ok(ParsedMeta {
-                title: format!("{} - {}", course_info.title, episode.title),
-                stream_type: StreamType::Dash,
-                meta: DownloadType::CourseChapterDash(video_info),
-            })
-        } else if let Some(mp4_info) = play_info.durl {
-            let mp4_video_stream = mp4_info
-                .iter()
-                .find(|s| s.order == 1)
-                .ok_or_else(|| ParseError::ParseError("未找到可用的视频流".to_string()))?;
-
-            // 构建视频信息
-            let video_info = Mp4VideoInfo {
-                url: format!("https://www.bilibili.com/cheese/play/ep{}", episode.id),
-                aid: episode.aid,
-                bvid: format!("cheese_{}", episode.id),
-                cid: episode.cid,
-                title: format!("{} - {}", course_info.title, episode.title),
-                cover: course_info.cover.clone(),
-                desc: "".to_string(),
-                views: String::new(),
-                danmakus: String::new(),
-                up_name: String::new(),
-                up_mid: 0,
-                video_url: mp4_video_stream.url.clone(),
-            };
-
-            Ok(ParsedMeta {
-                title: format!("{} - {}", course_info.title, episode.title),
-                stream_type: StreamType::MP4,
-                meta: DownloadType::CourseChapterMp4(video_info),
+        // --------------------------------------------------------------------
+        let audio_stream_task = if config.need_audio && play_info.dash.is_some() {
+            // 如果需要音频且有 DASH 流
+            let audio_url = play_info
+                .dash
+                .as_ref()
+                .and_then(|d| d.audio.first())
+                .ok_or_else(|| ParseError::ParseError("未找到音频流".to_string()))?;
+            // 构建下载任务
+            Some(DownloadTask {
+                url: audio_url.base_url.clone(),
+                file_type: FileType::Audio,
+                name: format!("{} - {} - {}", title, episode.title, audio_url.id),
+                output_path: format!("./tmp/{}-{}.m4s", title, episode.title),
+                temp_path: config.output_dir.clone(),
+                metadata: HashMap::new(),
             })
         } else {
-            Err(ParseError::ParseError("未解析出下载源地址".to_string()))
+            None
+        };
+
+        if let Some(video_task) = &video_stream_task {
+            download_task_vec.push(video_task.clone());
         }
+
+        if let Some(audio_task) = &audio_stream_task {
+            download_task_vec.push(audio_task.clone());
+        }
+
+        Ok(download_task_vec)
     }
 }
 
 #[async_trait]
 impl<'a> Parser for CourseParser<'a> {
-    async fn parse(&mut self, url_type: &UrlType) -> Result<ParsedMeta, ParseError> {
-        match url_type {
-            UrlType::CourseEpisode(ep_id) => self.handle_episode(ep_id).await,
-            UrlType::CourseSeason(ss_id) => {
-                // 对于整季，需要先获取课程信息并展示
-                let course_info = self.get_season_info(ss_id).await?;
-                info!(
-                    "课程 {} 共有 {} 集",
-                    course_info.title,
-                    course_info.episodes.len()
-                );
-
-                // 这里我们返回第一集作为示例
-                // TODO: 在实际应用中，你需要：
-                // 1. 展示所有集数信息给用户
-                // 2. 让用户选择要下载哪些集
-                // 3. 使用 handle_selected_episodes 方法下载选中的集数
-                let first_episode = course_info
-                    .episodes
-                    .first()
-                    .ok_or_else(|| ParseError::ParseError("课程列表为空".to_string()))?;
-
-                self.create_video_meta(&course_info, first_episode).await
-            }
-            _ => Err(ParseError::InvalidUrl),
-        }
-    }
-
     async fn parse_with_options(
         &mut self,
         url_type: &UrlType,
         options: ParserOptions,
     ) -> Result<ParsedMeta, ParseError> {
+        debug!("开始解析----------------------");
+        debug!("开始解析课程信息: {:?}", url_type);
+        debug!("解析选项: {:?}", options);
         // 确保传入的是课程选项
-        let (quality, episode_range) = match options {
-            ParserOptions::Course {
-                quality,
-                episode_range,
-            } => (quality, episode_range),
+        let config = match options {
+            ParserOptions::Course { config } => config,
             _ => return Err(ParseError::ParseError("无效的课程解析选项".to_string())),
         };
 
         match url_type {
             UrlType::CourseEpisode(ep_id) => {
+                // 处理单集课程
                 let course_info = self.get_course_info(None, Some(ep_id)).await?;
-
+                debug!(
+                    "课程 {} 共有 {} 集",
+                    course_info.title,
+                    course_info.episodes.len()
+                );
                 let episode = course_info
                     .episodes
                     .iter()
                     .find(|ep| ep.id.to_string() == *ep_id)
                     .ok_or_else(|| ParseError::ParseError("未找到章节信息".to_string()))?;
 
-                self.create_video_meta(&course_info, episode, quality).await
+                let download_itmes = self
+                    .create_video_meta(&course_info.title, &episode, &config)
+                    .await?;
+
+                Ok(ParsedMeta {
+                    title: course_info.title.clone(),
+                    download_items: download_itmes,
+                    download_type: DownloadType::Course,
+                })
             }
             UrlType::CourseSeason(ss_id) => {
                 // 获取课程信息
@@ -320,18 +305,18 @@ impl<'a> Parser for CourseParser<'a> {
                     course_info.title,
                     course_info.episodes.len()
                 );
+                debug!("指定的集数范围: {:?}", config.episode_range);
+                debug!("课程提供的集数范围: {:?}", course_info.episodes);
 
-                match episode_range {
+                let episodes_to_download = match &config.episode_range {
                     Some(range) => {
                         // 解析要下载的集数范围
-                        let episodes = parse_episode_range(&range)?;
+                        let episodes = parse_episode_range(range)?;
 
                         // 验证集数是否有效
                         let valid_episodes: Vec<_> = episodes
                             .into_iter()
-                            .filter_map(|ep_id| {
-                                course_info.episodes.iter().find(|ep| ep.id == ep_id)
-                            })
+                            .filter_map(|id| course_info.episodes.get(id as usize - 1))
                             .collect();
 
                         if valid_episodes.is_empty() {
@@ -340,22 +325,26 @@ impl<'a> Parser for CourseParser<'a> {
                             ));
                         }
 
-                        // 获取第一个有效集数的信息来返回
-                        let first_episode = &valid_episodes[0];
-                        self.create_video_meta(&course_info, first_episode, quality)
-                            .await
+                        valid_episodes
                     }
                     None => {
-                        // 如果没有指定范围，则返回第一集的信息
-                        let first_episode = course_info
-                            .episodes
-                            .first()
-                            .ok_or_else(|| ParseError::ParseError("课程列表为空".to_string()))?;
-
-                        self.create_video_meta(&course_info, first_episode, quality)
-                            .await
+                        return Err(ParseError::ParseError("未指定集数范围".to_string()));
                     }
+                };
+
+                let mut download_items: Vec<DownloadTask> = Vec::new();
+                for episode in episodes_to_download {
+                    let tasks = self
+                        .create_video_meta(&course_info.title, &episode, &config)
+                        .await?;
+                    download_items.extend(tasks);
                 }
+
+                Ok(ParsedMeta {
+                    title: course_info.title.clone(),
+                    download_items,
+                    download_type: DownloadType::Course,
+                })
             }
             _ => Err(ParseError::InvalidUrl),
         }

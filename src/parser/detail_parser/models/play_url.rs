@@ -4,8 +4,6 @@ use serde::Deserialize;
 pub struct PlayUrlData {
     pub format: String,                  // 流格式
     pub timelength: i64,                 // 时长，单位为秒
-    pub accept_description: Vec<String>, // 支持的分辨率列表
-    pub accept_quality: Vec<i32>,        // 支持的分辨率ID列表
     pub quality: Option<i32>,            // 当前选择的分辨率ID
     pub dash: Option<DashInfo>,          // DASH流信息
     pub durl: Option<Vec<Mp4Info>>,           // MP4流信息

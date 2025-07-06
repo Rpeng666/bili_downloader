@@ -39,7 +39,7 @@ impl ParsedMeta {
         match &self.download_type {
             DownloadType::CommonVideo => post_process(task, parser_options).await,
             DownloadType::Bangumi => post_process(task, parser_options).await,
-            // DownloadType::Course(info) => info.post_process(task, parser_options).await,
+            DownloadType::Course => post_process(task, parser_options).await,
             _ => Err(ParseError::ParseError("不支持的下载类型".to_string())),
         }
     }

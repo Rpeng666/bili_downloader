@@ -1,9 +1,6 @@
 use crate::{
     common::{client::client::BiliClient, models::ParsedMeta},
-    parser::detail_parser::{
-        get_detail_parser,
-        parser_trait::ParserOptions,
-    },
+    parser::detail_parser::{get_detail_parser, parser_trait::ParserOptions},
 };
 use errors::ParseError;
 use models::UrlType;

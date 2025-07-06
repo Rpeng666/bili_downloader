@@ -25,8 +25,7 @@ pub enum ParserOptions {
 
     // 课程的选项
     Course {
-        quality: VideoQuality,
-        episode_range: Option<String>, // 仅用于整季课程
+        config: DownloadConfig, // 下载配置
     },
 }
 

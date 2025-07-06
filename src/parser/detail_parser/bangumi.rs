@@ -10,7 +10,6 @@ use crate::parser::detail_parser::parser_trait::{ParserOptions, StreamType, pars
 use crate::parser::models::UrlType;
 use crate::parser::{ParsedMeta, errors::ParseError};
 use async_trait::async_trait;
-use serde::de;
 use serde_derive::Deserialize;
 use tracing::debug;
 

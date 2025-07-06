@@ -79,16 +79,16 @@ async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
 fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
     // 将命令行的 quality 选项转换为 VideoQuality 枚举
     let quality = match args.quality {
-        cli::QualityOption::Q360P => VideoQuality::Q360P,       // 流畅 360P
-        cli::QualityOption::Q480P => VideoQuality::Q480P,       // 清晰 480P
-        cli::QualityOption::Q720P => VideoQuality::Q720P,       // 高清 720P
-        cli::QualityOption::Q720P60 => VideoQuality::Q720P60,   // 高清 720P60
-        cli::QualityOption::Q1080P => VideoQuality::Q1080P,     // 高清 1080P
-        cli::QualityOption::Q1080PP => VideoQuality::Q1080PP,   // 高清 1080P+
+        cli::QualityOption::Q360P => VideoQuality::Q360P, // 流畅 360P
+        cli::QualityOption::Q480P => VideoQuality::Q480P, // 清晰 480P
+        cli::QualityOption::Q720P => VideoQuality::Q720P, // 高清 720P
+        cli::QualityOption::Q720P60 => VideoQuality::Q720P60, // 高清 720P60
+        cli::QualityOption::Q1080P => VideoQuality::Q1080P, // 高清 1080P
+        cli::QualityOption::Q1080PP => VideoQuality::Q1080PP, // 高清 1080P+
         cli::QualityOption::Q1080P60 => VideoQuality::Q1080P60, // 高清 1080P60
-        cli::QualityOption::Q4K => VideoQuality::Q4K,           // 超清 4K
-        cli::QualityOption::QHdr => VideoQuality::QHdr,         // HDR 真彩色
-        cli::QualityOption::Q8K => VideoQuality::Q8K,           // 超高清 8K
+        cli::QualityOption::Q4K => VideoQuality::Q4K,     // 超清 4K
+        cli::QualityOption::QHdr => VideoQuality::QHdr,   // HDR 真彩色
+        cli::QualityOption::Q8K => VideoQuality::Q8K,     // 超高清 8K
     };
 
     debug!(
@@ -97,13 +97,30 @@ fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
     );
 
     // 根据URL类型返回对应的选项
-    if url.contains("/cheese/play/") {
-        ParserOptions::Course {
-            quality,
-            episode_range: args.parts.clone(),
-        }
-    } else if url.contains("/bangumi/play/") {
+    if url.contains("/bangumi/play/") {
+        // 后期可能需要更复杂的逻辑来区分番剧和课程
         ParserOptions::Bangumi {
+            config: DownloadConfig {
+                resolution: quality,
+                need_audio: args.need_audio,
+                need_video: args.need_video,
+                need_subtitle: args.need_subtitle,
+                need_danmaku: args.need_danmaku,
+                concurrency: args.concurrency,
+                episode_range: args.parts.clone(),
+                merge: args.merge,
+                output_dir: args
+                    .output_dir
+                    .clone()
+                    .to_str()
+                    .unwrap_or("./downloads")
+                    .to_string(),
+                output_format: "mp4".to_string(),
+            },
+        }
+    } else if url.contains("/cheese/play/") {
+        // 课程解析选项
+        ParserOptions::Course {
             config: DownloadConfig {
                 resolution: quality,
                 need_audio: args.need_audio,

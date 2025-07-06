@@ -1,13 +1,13 @@
 pub mod bangumi;
 pub mod common_video;
-// pub mod course;
+pub mod course;
 pub mod models;
 pub mod parser_trait;
 pub mod danmaku_handler;
 
 pub use bangumi::BangumiParser;
 pub use common_video::CommonVideoParser;
-// pub use course::CourseParser;
+pub use course::CourseParser;
 pub use parser_trait::Parser;
 pub use tracing::debug;
 
@@ -27,9 +27,9 @@ pub fn get_detail_parser<'a>(
         UrlType::BangumiEpisode(_) | UrlType::BangumiSeason(_) => {
             Ok(Box::new(BangumiParser::new(client)))
         }
-        // UrlType::CourseEpisode(_) | UrlType::CourseSeason(_) => {
-        //     Ok(Box::new(CourseParser::new(client)))
-        // }
+        UrlType::CourseEpisode(_) | UrlType::CourseSeason(_) => {
+            Ok(Box::new(CourseParser::new(client)))
+        }
         _ => Err(ParseError::UnsupportedType),
     }
 }
