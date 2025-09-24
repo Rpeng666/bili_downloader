@@ -47,7 +47,7 @@ pub struct Cli {
     #[arg(long, value_name = "URL")]
     #[arg(value_parser = clap::value_parser!(String))]
     #[arg(value_hint = clap::ValueHint::Url)]
-    pub url: String,
+    pub url: Option<String>,
 
     /// 登录B站账号 (需要下载高清视频时使用)
     #[arg(long)]

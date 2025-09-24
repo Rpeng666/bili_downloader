@@ -1,6 +1,6 @@
 use clap::Parser;
 use colored::Colorize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -186,7 +186,14 @@ async fn main() -> Result<()> {
         return Err("MCP功能未启用".into());
     }
 
-    info!("开始下载视频: {}", args.url);
+    // 检查是否仅执行登录
+    let is_login_only = args.url.is_none();
+
+    if is_login_only {
+        info!("仅执行登录操作");
+    } else {
+        info!("开始下载视频: {}", args.url.as_ref().unwrap());
+    }
 
     // 认证处理
     let auth_manager = auth::AuthManager::new();
@@ -194,19 +201,27 @@ async fn main() -> Result<()> {
 
     if args.login || args.cookie.is_some() || args.user_dir.is_some() {
         session_id = handle_auth(&auth_manager, &args).await?;
-    } else {
+    } else if !is_login_only {
         warn!("未提供登录信息，可能无法下载受限内容");
+    }
+
+    // 如果仅登录，完成登录后退出
+    if is_login_only {
+        let session_file = Path::new("./sessions").join(session_id.to_string()).join("cookies.jsonl");
+        let abs_path = session_file.canonicalize().unwrap_or(session_file);
+        info!("登录成功，登录信息已保存到: {}", abs_path.display());
+        return Ok(());
     }
 
     let client = auth_manager.get_authed_client(session_id).await?;
 
     // 创建解析选项
-    let options = create_parser_options(&args, &args.url);
+    let options = create_parser_options(&args, args.url.as_ref().unwrap());
 
     // 解析视频信息
     info!("开始解析...");
     let mut parser = parser::VideoParser::new(client.clone(), true);
-    let parsed_metas = parser.parse(&args.url, &options).await.map_err(|e| {
+    let parsed_metas = parser.parse(args.url.as_ref().unwrap(), &options).await.map_err(|e| {
         error!("解析失败: {}", e);
         e
     })?;
@@ -216,7 +231,7 @@ async fn main() -> Result<()> {
     debug!("解析结果: {:?}", parsed_metas);
 
     // 准备下载环境
-    let (state_file, output_dir) = prepare_download_env(&args).await?;
+    let (state_file, _) = prepare_download_env(&args).await?;
 
     // 开始下载
     let mut task = parsed_metas.download_items.clone();
