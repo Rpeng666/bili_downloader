@@ -11,48 +11,75 @@ env:
   
 jobs:
   build:
-    name: Build ${{ matrix.os }}
+    name: Build ${{ matrix.os }} (${{ matrix.build_type }})
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write      # 添加写入权限
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
+        build_type: [default, bundled-ffmpeg]
         include:
           - os: windows-latest
+            build_type: default
             artifact_name: bilidl.exe
             asset_name: bilidl-windows.exe
+            install_ffmpeg: true
+          - os: windows-latest
+            build_type: bundled-ffmpeg
+            artifact_name: bilidl.exe
+            asset_name: bilidl-windows-bundled.exe
+            install_ffmpeg: false
           - os: ubuntu-latest
+            build_type: default
             artifact_name: bilidl
             asset_name: bilidl-linux
+            install_ffmpeg: true
+          - os: ubuntu-latest
+            build_type: bundled-ffmpeg
+            artifact_name: bilidl
+            asset_name: bilidl-linux-bundled
+            install_ffmpeg: false
           - os: macos-latest
+            build_type: default
             artifact_name: bilidl
             asset_name: bilidl-macos
+            install_ffmpeg: true
+          - os: macos-latest
+            build_type: bundled-ffmpeg
+            artifact_name: bilidl
+            asset_name: bilidl-macos-bundled
+            install_ffmpeg: false
 
     steps:
     - uses: actions/checkout@v4
     
     - name: Install FFmpeg (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.install_ffmpeg && matrix.os == 'windows-latest'
       run: |
         choco install ffmpeg
         
     - name: Install FFmpeg (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.install_ffmpeg && matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg
         
     - name: Install FFmpeg (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.install_ffmpeg && matrix.os == 'macos-latest'
       run: |
         brew install ffmpeg
         
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       
-    - name: Build
+    - name: Build (Default)
+      if: matrix.build_type == 'default'
       run: cargo build --release
+      
+    - name: Build (Bundled FFmpeg)
+      if: matrix.build_type == 'bundled-ffmpeg'
+      run: cargo build --release --features bundled-ffmpeg
       
     - name: Rename binary (Windows)
       if: matrix.os == 'windows-latest'
