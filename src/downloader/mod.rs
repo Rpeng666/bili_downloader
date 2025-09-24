@@ -45,8 +45,8 @@ impl VideoDownloader {
         output_path: String,
         file_type: FileType,
     ) -> Result<()> {
-        info!("------------------------------------------------------");
-        info!("开始下载 {} ... ", name);
+        crate::common::logger::PrettyLogger::separator();
+        crate::common::logger::PrettyLogger::info(format!("开始下载: {}", name));
 
         let download_file_path = PathBuf::from(output_path);
         // 确保输出目录存在
@@ -56,7 +56,7 @@ impl VideoDownloader {
         self.start_download(&url, &download_file_path, &file_type)
             .await?;
 
-        info!("下载完成！ {}", download_file_path.display());
+        crate::common::logger::PrettyLogger::success(format!("下载完成: {}", download_file_path.display()));
         Ok(())
     }
 

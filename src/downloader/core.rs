@@ -158,7 +158,7 @@ impl DownloadCore {
             )
         };
 
-        info!("开始下载任务: {}, 类型: {:?}", task_id, file_type);
+        debug!("开始下载任务: {}, 类型: {:?}", task_id, file_type);
 
         // 更新任务状态为下载中
         {
@@ -206,7 +206,7 @@ impl DownloadCore {
             match result {
                 Ok(_) => {
                     task_guard.status = TaskStatus::Completed;
-                    info!("✅ 下载任务完成: {}", task_id);
+                    debug!("下载任务完成: {}", task_id);
                 }
                 Err(DownloadError::RateLimited(msg)) => {
                     // 风控错误，跳过任务而不是失败

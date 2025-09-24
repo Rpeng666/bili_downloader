@@ -12,6 +12,7 @@ pub mod download_type {
     pub mod common_video;
 }
 
+pub mod logger;
 pub mod models;
 pub mod utils;
 pub mod wbi_utils;

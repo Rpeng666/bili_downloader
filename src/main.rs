@@ -1,8 +1,9 @@
 use clap::Parser;
-use colored::Colorize;
 use std::path::{Path, PathBuf};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+use crate::common::logger::PrettyLogger;
 
 use crate::parser::{
     detail_parser::{models::DownloadConfig, parser_trait::ParserOptions},
@@ -25,9 +26,10 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 async fn handle_auth(auth_manager: &auth::AuthManager, args: &cli::Cli) -> Result<Uuid> {
     // 如果提供了cookie，直接使用
     if let Some(cookie) = &args.cookie {
-        info!("使用提供的cookie进行登录");
+        log_info!("使用提供的Cookie进行登录");
         let id_opt = auth_manager.login_by_cookies(cookie).await?;
         if let Some(id) = id_opt {
+            PrettyLogger::user_status("登录成功", &id.to_string());
             return Ok(id);
         } else {
             return Err("使用提供的cookie登录失败".into());
@@ -36,22 +38,22 @@ async fn handle_auth(auth_manager: &auth::AuthManager, args: &cli::Cli) -> Resul
 
     // 如果指定了用户目录，尝试从文件加载
     if let Some(user_dir) = &args.user_dir {
-        info!("尝试从用户目录加载登录状态");
+        log_info!("尝试从用户目录加载登录状态");
         if let Ok(Some(id)) = auth_manager
             .login_by_cookies(&user_dir.to_str().unwrap().to_string())
             .await
         {
-            info!("{}: {}", "已登录".green(), id);
+            PrettyLogger::user_status("已登录", &id.to_string());
             return Ok(id);
         }
-        warn!("用户目录中未找到有效的登录信息");
+        PrettyLogger::warning("用户目录中未找到有效的登录信息");
     }
 
     // 如果需要登录，执行登录流程
     if args.login {
-        info!("开始二维码登录流程");
+        log_step!("开始二维码登录流程");
         let id = auth_manager.qr_login_flow().await?;
-        info!("{}: {}", "登录成功".green(), id);
+        PrettyLogger::user_status("登录成功", &id.to_string());
         return Ok(id);
     }
 
@@ -63,13 +65,13 @@ async fn prepare_download_env(args: &cli::Cli) -> Result<(PathBuf, PathBuf)> {
     // 创建状态文件
     let state_file = PathBuf::from("state.json");
     if !state_file.exists() {
-        info!("创建下载状态文件");
+        log_info!("创建下载状态文件");
         tokio::fs::write(&state_file, "[]").await?;
     }
 
     // 创建输出目录
     let output_dir = args.output_dir.clone();
-    info!("创建输出目录: {:?}", output_dir);
+    PrettyLogger::file_info("输出目录", output_dir.to_str().unwrap_or("./downloads"));
     tokio::fs::create_dir_all(&output_dir).await?;
 
     Ok((state_file, output_dir))
@@ -166,7 +168,7 @@ fn create_parser_options(args: &cli::Cli, url: &str) -> ParserOptions {
 async fn main() -> Result<()> {
     // 初始化日志
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::DEBUG)
         .init();
 
     // 解析命令行参数
@@ -175,14 +177,14 @@ async fn main() -> Result<()> {
     // 检查是否启动MCP服务器模式
     #[cfg(feature = "mcp")]
     if args.mcp {
-        info!("🚀 启动 MCP 服务器模式");
+        log_info!("启动MCP服务器模式");
         let mut mcp_server = mcp::McpServer::new();
         return mcp_server.run().await.map_err(|e| e.into());
     }
 
     #[cfg(not(feature = "mcp"))]
     if args.mcp {
-        error!("MCP功能未启用。请使用 --features mcp 重新编译");
+        PrettyLogger::error("MCP功能未启用。请使用 --features mcp 重新编译");
         return Err("MCP功能未启用".into());
     }
 
@@ -190,9 +192,9 @@ async fn main() -> Result<()> {
     let is_login_only = args.url.is_none();
 
     if is_login_only {
-        info!("仅执行登录操作");
+        log_info!("仅执行登录操作");
     } else {
-        info!("开始下载视频: {}", args.url.as_ref().unwrap());
+        PrettyLogger::video_info(args.url.as_ref().unwrap(), "准备下载");
     }
 
     // 认证处理
@@ -202,14 +204,17 @@ async fn main() -> Result<()> {
     if args.login || args.cookie.is_some() || args.user_dir.is_some() {
         session_id = handle_auth(&auth_manager, &args).await?;
     } else if !is_login_only {
-        warn!("未提供登录信息，可能无法下载受限内容");
+        log_warning!("未提供登录信息，可能无法下载受限内容");
     }
 
     // 如果仅登录，完成登录后退出
     if is_login_only {
-        let session_file = Path::new("./sessions").join(session_id.to_string()).join("cookies.jsonl");
+        let session_file = Path::new("./sessions")
+            .join(session_id.to_string())
+            .join("cookies.jsonl");
         let abs_path = session_file.canonicalize().unwrap_or(session_file);
-        info!("登录成功，登录信息已保存到: {}", abs_path.display());
+        PrettyLogger::file_info("登录信息已保存到", &abs_path.display().to_string());
+        log_success!("登录完成！");
         return Ok(());
     }
 
@@ -219,21 +224,25 @@ async fn main() -> Result<()> {
     let options = create_parser_options(&args, args.url.as_ref().unwrap());
 
     // 解析视频信息
-    info!("开始解析...");
+    log_step!("开始解析视频信息");
     let mut parser = parser::VideoParser::new(client.clone(), true);
-    let parsed_metas = parser.parse(args.url.as_ref().unwrap(), &options).await.map_err(|e| {
-        error!("解析失败: {}", e);
-        e
-    })?;
+    let parsed_metas = parser
+        .parse(args.url.as_ref().unwrap(), &options)
+        .await
+        .map_err(|e| {
+            error!("解析失败: {}", e);
+            e
+        })?;
 
     // 可能有多个视频需要下载
-    info!("标题: << {} >>", parsed_metas.title);
+    PrettyLogger::video_info(&parsed_metas.title, "解析完成");
     debug!("解析结果: {:?}", parsed_metas);
 
     // 准备下载环境
     let (state_file, _) = prepare_download_env(&args).await?;
 
     // 开始下载
+    log_step!("开始下载视频");
     let mut task = parsed_metas.download_items.clone();
     let downloader = downloader::VideoDownloader::new(4, state_file, client.clone());
     downloader.download(&mut task).await?;
@@ -242,8 +251,12 @@ async fn main() -> Result<()> {
     if let Err(e) = parsed_metas.post_process(&task, &options).await {
         error!("后处理失败: {}", e);
     } else {
-        info!("后处理完成");
+        PrettyLogger::step_complete("后处理完成");
     }
-    info!("{}", "下载完成！".green());
+
+    PrettyLogger::completion_summary(vec![
+        &format!("📹 视频: {}", parsed_metas.title),
+        &format!("📂 保存位置: {}", args.output_dir.display()),
+    ]);
     Ok(())
 }
