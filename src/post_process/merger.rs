@@ -26,87 +26,7 @@ impl MediaMerger {
 
         debug!("开始合并视频和音频 -> 输出路径: {:?}", output_path);
 
-        // 尝试使用打包的 FFmpeg（如果启用 bundled-ffmpeg 特性）
-        #[cfg(feature = "bundled-ffmpeg")]
-        {
-            match Self::try_merge_with_bundled_ffmpeg(video_path, audio_path, output_path).await {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    warn!("打包的 FFmpeg 不可用，回退到系统 FFmpeg: {}", e);
-                    // 继续到外部 FFmpeg
-                }
-            }
-        }
-
-        // 使用外部 FFmpeg
         Self::merge_with_external_ffmpeg(video_path, audio_path, output_path).await
-    }
-
-    #[cfg(feature = "bundled-ffmpeg")]
-    async fn try_merge_with_bundled_ffmpeg(
-        video_path: &Path,
-        audio_path: &Path,
-        output_path: &Path,
-    ) -> Result<(), DownloadError> {
-        use ffmpeg_next as ffmpeg;
-
-        // 使用 spawn_blocking 来运行阻塞的 ffmpeg 操作
-        tokio::task::spawn_blocking(move || {
-            // 初始化 ffmpeg
-            ffmpeg::init().map_err(|e| DownloadError::FfmpegError(format!("FFmpeg 初始化失败: {}", e)))?;
-
-            // 打开输入文件
-            let mut ictx_video = ffmpeg::format::input(&video_path)
-                .map_err(|e| DownloadError::FfmpegError(format!("打开视频文件失败: {}", e)))?;
-            let mut ictx_audio = ffmpeg::format::input(&audio_path)
-                .map_err(|e| DownloadError::FfmpegError(format!("打开音频文件失败: {}", e)))?;
-
-            // 创建输出文件
-            let mut octx = ffmpeg::format::output(&output_path)
-                .map_err(|e| DownloadError::FfmpegError(format!("创建输出文件失败: {}", e)))?;
-
-            // 复制视频流
-            let video_stream = ictx_video.streams().best(ffmpeg::media::Type::Video)
-                .ok_or_else(|| DownloadError::FfmpegError("未找到视频流".to_string()))?;
-            let video_out_stream = octx.add_stream(ffmpeg::encoder::find(ffmpeg::codec::Id::H264))
-                .map_err(|e| DownloadError::FfmpegError(format!("添加视频流失败: {}", e)))?;
-            video_out_stream.set_parameters(video_stream.parameters());
-
-            // 复制音频流
-            let audio_stream = ictx_audio.streams().best(ffmpeg::media::Type::Audio)
-                .ok_or_else(|| DownloadError::FfmpegError("未找到音频流".to_string()))?;
-            let audio_out_stream = octx.add_stream(ffmpeg::encoder::find(ffmpeg::codec::Id::AAC))
-                .map_err(|e| DownloadError::FfmpegError(format!("添加音频流失败: {}", e)))?;
-            audio_out_stream.set_parameters(audio_stream.parameters());
-
-            // 写入文件头
-            octx.write_header()
-                .map_err(|e| DownloadError::FfmpegError(format!("写入文件头失败: {}", e)))?;
-
-            // 复制包
-            for (stream, packet) in ictx_video.packets() {
-                if stream.index() == video_stream.index() {
-                    octx.write_packet(&packet)
-                        .map_err(|e| DownloadError::FfmpegError(format!("写入视频包失败: {}", e)))?;
-                }
-            }
-
-            for (stream, packet) in ictx_audio.packets() {
-                if stream.index() == audio_stream.index() {
-                    octx.write_packet(&packet)
-                        .map_err(|e| DownloadError::FfmpegError(format!("写入音频包失败: {}", e)))?;
-                }
-            }
-
-            // 写入文件尾
-            octx.write_trailer()
-                .map_err(|e| DownloadError::FfmpegError(format!("写入文件尾失败: {}", e)))?;
-
-            info!("✅ 视频与音频合并成功 (使用打包的 FFmpeg)，输出文件: {:?}", output_path);
-            Ok(())
-        })
-        .await
-        .map_err(|e| DownloadError::FfmpegError(format!("异步任务失败: {}", e)))?
     }
 
     async fn merge_with_external_ffmpeg(
@@ -114,25 +34,8 @@ impl MediaMerger {
         audio_path: &Path,
         output_path: &Path,
     ) -> Result<(), DownloadError> {
-        // 获取 ffmpeg 路径（支持环境变量）
-        let ffmpeg_cmd = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string());
-
-        // 检查 ffmpeg 是否可用
-        debug!("检查系统中是否安装了 ffmpeg...");
-        let ffmpeg_check = Command::new(&ffmpeg_cmd)
-            .arg("-version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
-
-        if ffmpeg_check.is_err() || !ffmpeg_check.unwrap().success() {
-            error!("❌ 未检测到 ffmpeg，请确保系统中已安装并配置了 ffmpeg 可执行路径。");
-            error!("安装方法参考：https://ffmpeg.org/download.html");
-            error!("或者设置环境变量 FFMPEG_PATH 指向 ffmpeg 可执行文件路径");
-            return Err(DownloadError::FfmpegNotFound);
-        }
+        // 获取 ffmpeg 路径（支持环境变量和自动检测）
+        let ffmpeg_cmd = Self::find_ffmpeg_path().await?;
 
         let output = Command::new(&ffmpeg_cmd)
             .arg("-i")
@@ -167,7 +70,75 @@ impl MediaMerger {
             return Err(DownloadError::FfmpegError(err_msg.to_string()));
         }
 
-        info!("✅ 视频与音频合并成功 (使用系统 FFmpeg)，输出文件: {:?}", output_path);
+        info!("✅ 视频与音频合并成功，输出文件: {:?}", output_path);
         Ok(())
+    }
+
+    async fn find_ffmpeg_path() -> Result<String, DownloadError> {
+        // 首先检查环境变量
+        if let Ok(path) = std::env::var("FFMPEG_PATH") {
+            if Self::check_ffmpeg(&path).await {
+                return Ok(path);
+            }
+        }
+
+        // 检查同级目录的 FFmpeg（打包版本）
+        let exe_dir = std::env::current_exe()
+            .map_err(|e| DownloadError::FfmpegError(format!("获取可执行文件路径失败: {}", e)))?
+            .parent()
+            .unwrap()
+            .to_path_buf();
+
+        let bundled_paths = [
+            exe_dir.join("ffmpeg.exe"),  // Windows
+            exe_dir.join("ffmpeg"),      // Unix
+        ];
+
+        for path in &bundled_paths {
+            if let Some(path_str) = path.to_str() {
+                if Self::check_ffmpeg(path_str).await {
+                    return Ok(path_str.to_string());
+                }
+            }
+        }
+
+        // 检查常见路径
+        let common_paths = [
+            "ffmpeg",           // PATH 中
+            "ffmpeg.exe",       // Windows
+            "./ffmpeg",         // 当前目录
+            "./ffmpeg.exe",     // 当前目录 Windows
+            "/usr/bin/ffmpeg",  // Linux
+            "/usr/local/bin/ffmpeg", // macOS/Linux
+            "C:\\ffmpeg\\bin\\ffmpeg.exe", // Windows 常见安装路径
+        ];
+
+        for path in &common_paths {
+            if Self::check_ffmpeg(path).await {
+                return Ok(path.to_string());
+            }
+        }
+
+        // 如果都没找到，提供安装指导
+        error!("❌ 未检测到 ffmpeg，请安装 FFmpeg：");
+        error!("  Windows (Chocolatey): choco install ffmpeg");
+        error!("  Ubuntu/Debian: sudo apt install ffmpeg");
+        error!("  macOS (Homebrew): brew install ffmpeg");
+        error!("  或从 https://ffmpeg.org/download.html 下载");
+        error!("  安装后重新运行，或设置环境变量 FFMPEG_PATH 指向 ffmpeg 可执行文件");
+
+        Err(DownloadError::FfmpegNotFound)
+    }
+
+    async fn check_ffmpeg(path: &str) -> bool {
+        Command::new(path)
+            .arg("-version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false)
     }
 }

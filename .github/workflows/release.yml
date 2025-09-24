@@ -8,96 +8,98 @@ on:
 env:
   CARGO_TERM_COLOR: always
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  
+
 jobs:
   build:
-    name: Build ${{ matrix.os }} (${{ matrix.build_type }})
+    name: Build ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write      # 添加写入权限
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-        build_type: [default, bundled-ffmpeg]
         include:
           - os: windows-latest
-            build_type: default
             artifact_name: bilidl.exe
-            asset_name: bilidl-windows.exe
-            install_ffmpeg: true
-          - os: windows-latest
-            build_type: bundled-ffmpeg
-            artifact_name: bilidl.exe
-            asset_name: bilidl-windows-bundled.exe
-            install_ffmpeg: false
+            asset_name: bilidl-windows
+            ffmpeg_url: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+            ffmpeg_dir: ffmpeg-7.1-essentials_build
+            ffmpeg_exe: ffmpeg.exe
           - os: ubuntu-latest
-            build_type: default
             artifact_name: bilidl
             asset_name: bilidl-linux
-            install_ffmpeg: true
-          - os: ubuntu-latest
-            build_type: bundled-ffmpeg
-            artifact_name: bilidl
-            asset_name: bilidl-linux-bundled
-            install_ffmpeg: false
+            ffmpeg_url: https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+            ffmpeg_dir: ffmpeg-7.1-amd64-static
+            ffmpeg_exe: ffmpeg
           - os: macos-latest
-            build_type: default
             artifact_name: bilidl
             asset_name: bilidl-macos
-            install_ffmpeg: true
-          - os: macos-latest
-            build_type: bundled-ffmpeg
-            artifact_name: bilidl
-            asset_name: bilidl-macos-bundled
-            install_ffmpeg: false
+            ffmpeg_url: https://evermeet.cx/ffmpeg/ffmpeg-7.1.zip
+            ffmpeg_dir: ffmpeg
+            ffmpeg_exe: ffmpeg
 
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Install FFmpeg (Windows)
-      if: matrix.install_ffmpeg && matrix.os == 'windows-latest'
-      run: |
-        choco install ffmpeg
-        
-    - name: Install FFmpeg (Ubuntu)
-      if: matrix.install_ffmpeg && matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ffmpeg
-        
-    - name: Install FFmpeg (macOS)
-      if: matrix.install_ffmpeg && matrix.os == 'macos-latest'
-      run: |
-        brew install ffmpeg
-        
+
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
-      
-    - name: Build (Default)
-      if: matrix.build_type == 'default'
+
+    - name: Build
       run: cargo build --release
-      
-    - name: Build (Bundled FFmpeg)
-      if: matrix.build_type == 'bundled-ffmpeg'
-      run: cargo build --release --features bundled-ffmpeg
-      
-    - name: Rename binary (Windows)
+
+    - name: Download FFmpeg (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        cd target/release
-        copy bilidl.exe ${{ matrix.asset_name }}
-        
-    - name: Rename binary (Unix)
+        curl -L ${{ matrix.ffmpeg_url }} -o ffmpeg.zip
+        unzip ffmpeg.zip
+        mv ${{ matrix.ffmpeg_dir }}/bin/ffmpeg.exe .
+
+    - name: Download FFmpeg (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        curl -L ${{ matrix.ffmpeg_url }} -o ffmpeg.tar.xz
+        tar -xf ffmpeg.tar.xz
+        cp ${{ matrix.ffmpeg_dir }}/${{ matrix.ffmpeg_exe }} .
+
+    - name: Download FFmpeg (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        curl -L ${{ matrix.ffmpeg_url }} -o ffmpeg.zip
+        unzip ffmpeg.zip
+        cp ${{ matrix.ffmpeg_exe }} .
+
+    - name: Create distribution package
+      run: |
+        mkdir dist
+        cp target/release/${{ matrix.artifact_name }} dist/
+        cp ${{ matrix.ffmpeg_exe }} dist/
+
+    - name: Create zip archive (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd dist
+        7z a ../${{ matrix.asset_name }}.zip *
+
+    - name: Create tar.gz archive (Unix)
       if: matrix.os != 'windows-latest'
       run: |
-        cd target/release
-        cp bilidl ${{ matrix.asset_name }}
-        
-    - name: Upload Release Asset
+        cd dist
+        tar -czf ../${{ matrix.asset_name }}.tar.gz *
+
+    - name: Upload Release Asset (Windows)
       uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+      if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows-latest'
       with:
-        files: target/release/${{ matrix.asset_name }}
+        files: ${{ matrix.asset_name }}.zip
+        token: ${{ secrets.GITHUB_TOKEN }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset (Unix)
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows-latest'
+      with:
+        files: ${{ matrix.asset_name }}.tar.gz
         token: ${{ secrets.GITHUB_TOKEN }}
         draft: false
         prerelease: false
