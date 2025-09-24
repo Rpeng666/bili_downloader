@@ -38,7 +38,7 @@
   - [x] 灵活的配置选项
   - [x] 友好的错误提示和解决建议
 - 🤖 **AI助手集成**
-  - [x] MCP (Model Context Protocol) 支持
+  - [x] MCP (Model Context Protocol) 支持(施工中)
 
 
 ## 📝 命令行参数
@@ -102,7 +102,7 @@ bilidl --mcp
 # AI助手可以直接通过自然语言控制下载器
 ```
 
-## 🤖 MCP (Model Context Protocol) 集成
+## 🤖 MCP (Model Context Protocol) 集成 (施工中)
 
 BiliDownloader 支持 MCP，可以与 AI 助手（如 Claude Desktop）无缝集成。
 

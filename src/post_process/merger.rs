@@ -90,8 +90,8 @@ impl MediaMerger {
             .to_path_buf();
 
         let bundled_paths = [
-            exe_dir.join("ffmpeg.exe"),  // Windows
-            exe_dir.join("ffmpeg"),      // Unix
+            exe_dir.join("ffmpeg.exe"), // Windows
+            exe_dir.join("ffmpeg"),     // Unix
         ];
 
         for path in &bundled_paths {
@@ -104,12 +104,12 @@ impl MediaMerger {
 
         // 检查常见路径
         let common_paths = [
-            "ffmpeg",           // PATH 中
-            "ffmpeg.exe",       // Windows
-            "./ffmpeg",         // 当前目录
-            "./ffmpeg.exe",     // 当前目录 Windows
-            "/usr/bin/ffmpeg",  // Linux
-            "/usr/local/bin/ffmpeg", // macOS/Linux
+            "ffmpeg",                      // PATH 中
+            "ffmpeg.exe",                  // Windows
+            "./ffmpeg",                    // 当前目录
+            "./ffmpeg.exe",                // 当前目录 Windows
+            "/usr/bin/ffmpeg",             // Linux
+            "/usr/local/bin/ffmpeg",       // macOS/Linux
             "C:\\ffmpeg\\bin\\ffmpeg.exe", // Windows 常见安装路径
         ];
 
