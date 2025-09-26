@@ -46,7 +46,7 @@ pub enum StreamType {
 
 // 定义一个trait，用于解析视频信息，然后返回元数据
 #[async_trait]
-pub trait Parser {
+pub trait Parser: Send {
     // 解析可能返回多个视频的元数据
     async fn parse_with_options(
         &mut self,

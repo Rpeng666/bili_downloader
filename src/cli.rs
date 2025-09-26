@@ -66,10 +66,17 @@ B站视频下载器 (bilidl) - 一个功能强大的B站内容下载工具
   # 仅登录保存认证信息
   bilidl --login
 
+  # 启动MCP服务器 (stdio模式)
+  bilidl --mcp
+
+  # 启动HTTP MCP服务器
+  bilidl --http 127.0.0.1:3000
+
 注意事项:
 • 下载高清/付费内容需要先使用 --login 进行登录
 • 首次使用会自动下载FFmpeg用于音视频合并
 • 支持的URL格式: 视频/av/bv, 番剧/ss/ep, 课程/cheese
+• MCP服务器支持AI助手集成，提供视频下载API
 "#)]
 pub struct Cli {
     /// 视频/番剧/课程链接 (支持多种B站URL格式)

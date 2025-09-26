@@ -1,6 +1,7 @@
 use colored::Colorize;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -29,7 +30,7 @@ impl SessionManager {
     ) -> Result<Uuid, ApiError> {
         // let _ = client.check_qr_login_status().await;
 
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut sessions = self.sessions.lock().await;
         if sessions.contains_key(&session_id) {
             return Err(ApiError::InvalidResponse("会话已存在".to_string()));
         }
@@ -64,10 +65,7 @@ impl SessionManager {
 
     // 获取会话中的客户端（自动携带最新令牌）
     pub async fn get_authed_client(&self, session_id: Uuid) -> Result<BiliClient, ApiError> {
-        let sessions = match self.sessions.lock() {
-            Ok(sessions) => sessions,
-            Err(_) => return Err(ApiError::InvalidResponse("会话锁定失败".to_string())),
-        };
+        let sessions = self.sessions.lock().await;
 
         if let Some(client) = sessions.get(&session_id) {
             Ok(client.clone())
@@ -79,8 +77,8 @@ impl SessionManager {
     }
 
     // 销毁会话
-    pub fn destory_session(&self, session_id: Uuid) -> Result<(), ApiError> {
-        let mut sessions = self.sessions.lock().unwrap();
+    pub async fn destory_session(&self, session_id: Uuid) -> Result<(), ApiError> {
+        let mut sessions = self.sessions.lock().await;
         if sessions.remove(&session_id).is_some() {
             Ok(())
         } else {

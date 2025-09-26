@@ -4,7 +4,8 @@ mod session;
 
 pub use qr_display::display_qr;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -83,7 +84,7 @@ impl AuthManager {
             // 登录状态有效
             info!("{}: {}", "登录状态有效".green(), path);
             // 创建新的会话
-            let session_manager = self.session_manager.lock().unwrap();
+            let session_manager = self.session_manager.lock().await;
             let session_id = Uuid::new_v4();
             session_manager
                 .create_session(session_id, &new_client)
@@ -93,17 +94,12 @@ impl AuthManager {
     }
 
     // 获取当前所有会话
-    pub fn list_sessions(&self) -> Vec<Uuid> {
-        let sessions = match self.session_manager.lock() {
-            Ok(guard) => guard,
-            Err(_) => return vec![],
-        };
+    pub async fn list_sessions(&self) -> Vec<Uuid> {
+        let session_manager = self.session_manager.lock().await;
+        let sessions = session_manager.sessions.lock().await;
 
         // 获取所有会话ID
-        let session_ids: Vec<Uuid> = match sessions.sessions.lock() {
-            Ok(guard) => guard.keys().cloned().collect(),
-            Err(_) => return vec![],
-        };
+        let session_ids: Vec<Uuid> = sessions.keys().cloned().collect();
         // 返回会话ID列表
         session_ids
     }
@@ -113,15 +109,8 @@ impl AuthManager {
     where
         F: FnOnce(&BiliClient) -> Result<T, ApiError>,
     {
-        let session_manager = match self.session_manager.lock() {
-            Ok(guard) => guard,
-            Err(_) => return Err(ApiError::LockError),
-        };
-
-        let sessions = match session_manager.sessions.lock() {
-            Ok(guard) => guard,
-            Err(_) => return Err(ApiError::LockError),
-        };
+        let session_manager = self.session_manager.lock().await;
+        let sessions = session_manager.sessions.lock().await;
 
         // 获取会话
         if let Some(client) = sessions.get(&session_id) {
@@ -180,10 +169,7 @@ impl AuthManager {
             // 检查登录状态
             if let Some(ref data) = status.data {
                 // 更新状态机
-                let mut qr_status = match self.qr_status.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
+                let mut qr_status = self.qr_status.lock().await;
 
                 // 根据不同状态进行处理
                 match data.code {
@@ -194,10 +180,7 @@ impl AuthManager {
                         qr_status.message = "登录成功".to_string();
 
                         // 创建新会话
-                        let session_manager = match self.session_manager.lock() {
-                            Ok(manager) => manager,
-                            Err(_) => return Err(ApiError::LockError),
-                        };
+                        let session_manager = self.session_manager.lock().await;
                         info!("login success, {:?}", data);
                         // 使用登录成功后的 cookies 创建会话
                         session_manager.create_session(session_id, &client).await?;
@@ -245,7 +228,7 @@ impl AuthManager {
         let client = self
             .session_manager
             .lock()
-            .unwrap()
+            .await
             .get_authed_client(session_id)
             .await?;
         // 检查登录状态
@@ -264,7 +247,7 @@ impl AuthManager {
         let client = self
             .session_manager
             .lock()
-            .unwrap()
+            .await
             .get_authed_client(session_id)
             .await?;
 

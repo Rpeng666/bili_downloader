@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
     #[cfg(feature = "mcp")]
     if args.mcp {
         log_info!("启动MCP服务器模式");
-        let mut mcp_server = mcp::McpServer::new();
+        let mcp_server = mcp::McpServer::new();
         return mcp_server.run().await.map_err(|e| e.into());
     }
 
