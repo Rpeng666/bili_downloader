@@ -89,7 +89,7 @@ impl SessionManager {
     }
 
     // 验证cookie的有效性
-    async fn validate_cookie(&self, cookie: &str) -> Result<u64, ApiError> {
+    async fn validate_cookie(&self, _cookie: &str) -> Result<u64, ApiError> {
         // let client = BiliClient::authenticated(cookie);
         // let profile: UserProfile = client
         //     .get("/user/profile")

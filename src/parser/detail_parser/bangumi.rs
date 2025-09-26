@@ -1,4 +1,7 @@
+use async_trait::async_trait;
+use serde_derive::Deserialize;
 use std::collections::HashMap;
+use tracing::debug;
 
 use crate::common::client::client::BiliClient;
 use crate::common::client::models::common::CommonResponse;
@@ -6,12 +9,9 @@ use crate::common::models::DownloadType;
 use crate::downloader::models::{DownloadTask, FileType};
 use crate::parser::detail_parser::Parser;
 use crate::parser::detail_parser::models::{DownloadConfig, PlayUrlData};
-use crate::parser::detail_parser::parser_trait::{ParserOptions, StreamType, parse_episode_range};
+use crate::parser::detail_parser::parser_trait::{ParserOptions, parse_episode_range};
 use crate::parser::models::UrlType;
 use crate::parser::{ParsedMeta, errors::ParseError};
-use async_trait::async_trait;
-use serde_derive::Deserialize;
-use tracing::debug;
 
 // 番剧单集信息响应
 #[derive(Debug, Deserialize)]

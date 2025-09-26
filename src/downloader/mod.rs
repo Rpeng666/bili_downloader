@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use core::DownloadCore;
 use tokio::time::Duration;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::Result;
 use crate::common::client::client::BiliClient;

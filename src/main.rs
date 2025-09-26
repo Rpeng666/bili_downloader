@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::path::{Path, PathBuf};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error};
 use uuid::Uuid;
 
 use crate::common::logger::PrettyLogger;

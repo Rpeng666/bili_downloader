@@ -1,4 +1,6 @@
+use async_trait::async_trait;
 use std::collections::HashMap;
+use tracing::{debug, warn};
 
 use crate::common::models::{DownloadType, ParsedMeta};
 use crate::common::{client::client::BiliClient, client::models::common::CommonResponse};
@@ -10,8 +12,6 @@ use crate::parser::{
     detail_parser::{Parser, models::PlayUrlData},
     errors::ParseError,
 };
-use async_trait::async_trait;
-use tracing::{debug, info, warn};
 
 pub struct CourseParser<'a> {
     client: &'a BiliClient,

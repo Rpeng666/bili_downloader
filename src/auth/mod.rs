@@ -3,7 +3,6 @@ mod qr_display;
 mod session;
 
 pub use qr_display::display_qr;
-use tracing::{error, info};
 
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -11,8 +10,10 @@ use std::time::Duration;
 
 use anyhow::Error;
 use colored::Colorize;
-use session::SessionManager;
+use tracing::{error, info};
 use uuid::Uuid;
+
+use session::SessionManager;
 
 use crate::common::client::client::BiliClient;
 use crate::common::client::error::ApiError;

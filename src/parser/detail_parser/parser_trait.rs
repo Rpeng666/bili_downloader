@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use serde_derive::{Deserialize, Serialize};
+use serde_derive::Deserialize;
 
 use crate::{
-    common::models::{DownloadType, ParsedMeta},
+    common::models::ParsedMeta,
     parser::{
         detail_parser::models::DownloadConfig,
         errors::ParseError,
-        models::{UrlType, VideoQuality},
+        models::UrlType,
     },
 };
 

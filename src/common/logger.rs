@@ -1,5 +1,4 @@
 use colored::*;
-use std::fmt;
 
 /// 漂亮的日志输出工具
 pub struct PrettyLogger;
