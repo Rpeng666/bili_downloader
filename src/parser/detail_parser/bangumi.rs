@@ -16,6 +16,13 @@ use crate::parser::models::UrlType;
 use crate::parser::detail_parser::error_utils::handle_api_error;
 use crate::parser::{ParsedMeta, errors::ParseError};
 
+// 查询策略trait
+trait BangumiQuery {
+    type Response;
+    fn build_params(&self) -> HashMap<String, String>;
+    fn parse_response(&self, resp: CommonResponse<BangumiInfo>) -> Result<Self::Response, ParseError>;
+}
+
 // 番剧单集信息响应
 #[derive(Debug, Deserialize)]
 struct BangumiEpResponse {
@@ -60,7 +67,7 @@ struct MediaInfo {
                        // 其他可能需要的字段
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Episode {
     id: u64,               // ep_id
     aid: i64,              // av号
@@ -81,6 +88,45 @@ pub struct BangumiInfo {
     total: u32,    // 总集数
 }
 
+// 整季查询策略
+struct SeasonQuery(String);
+
+impl BangumiQuery for SeasonQuery {
+    type Response = BangumiInfo;
+
+    fn build_params(&self) -> HashMap<String, String> {
+        HashMap::from([("season_id".to_string(), self.0.clone())])
+    }
+
+    fn parse_response(&self, resp: CommonResponse<BangumiInfo>) -> Result<Self::Response, ParseError> {
+        resp.result.ok_or_else(|| ParseError::ParseError("API响应中未找到番剧信息".to_string()))
+    }
+}
+
+// 单集查询策略
+struct EpisodeQuery(String);
+
+impl BangumiQuery for EpisodeQuery {
+    type Response = (BangumiInfo, Episode);
+
+    fn build_params(&self) -> HashMap<String, String> {
+        HashMap::from([("ep_id".to_string(), self.0.clone())])
+    }
+
+    fn parse_response(&self, resp: CommonResponse<BangumiInfo>) -> Result<Self::Response, ParseError> {
+        let bangumi_info = resp.result.ok_or_else(|| ParseError::ParseError("API响应中未找到番剧信息".to_string()))?;
+
+        let episode = bangumi_info
+            .episodes
+            .iter()
+            .find(|ep| ep.id == self.0.parse::<u64>().unwrap_or(0))
+            .cloned()
+            .ok_or_else(|| ParseError::ParseError("未找到指定的番剧集数".to_string()))?;
+
+        Ok((bangumi_info, episode))
+    }
+}
+
 pub struct BangumiParser<'a> {
     client: &'a BiliClient,
 }
@@ -90,21 +136,12 @@ impl<'a> BangumiParser<'a> {
         Self { client }
     }
 
-    // 根据 season_id 获取番剧信息
-    async fn get_season_info(
+    // 统一的番剧查询方法
+    async fn query_bangumi<Q: BangumiQuery>(
         &self,
-        season_id: Option<&str>,
-        ep_id: Option<&str>,
-    ) -> Result<BangumiInfo, ParseError> {
-        let params = match (season_id, ep_id) {
-            (Some(sid), None) => HashMap::from([("season_id".to_string(), sid.to_string())]),
-            (None, Some(eid)) => HashMap::from([("ep_id".to_string(), eid.to_string())]),
-            _ => {
-                return Err(ParseError::ParseError(
-                    "必须提供 season_id 或 ep_id".to_string(),
-                ));
-            }
-        };
+        query: Q
+    ) -> Result<Q::Response, ParseError> {
+        let params = query.build_params();
 
         let resp = self
             .client
@@ -122,8 +159,7 @@ impl<'a> BangumiParser<'a> {
             return Err(handle_api_error(resp.code, &resp.message, "番剧"));
         }
 
-        resp.result
-            .ok_or_else(|| ParseError::ParseError("API响应中未找到番剧信息".to_string()))
+        query.parse_response(resp)
     }
 
     // 获取播放地址
@@ -227,15 +263,9 @@ impl<'a> Parser for BangumiParser<'a> {
 
         match url_type {
             UrlType::BangumiEpisode(ep_id) => {
-                // 单集下载，直接获取单集信息
-                let bangumi_info = self.get_season_info(None, Some(ep_id)).await?;
+                // 单集下载，使用EpisodeQuery策略
+                let (bangumi_info, episode) = self.query_bangumi(EpisodeQuery(ep_id.clone())).await?;
                 debug!("番剧 {} 共有 {} 集", bangumi_info.title, bangumi_info.total);
-
-                let episode = bangumi_info
-                    .episodes
-                    .iter()
-                    .find(|ep| ep.id == (*ep_id).parse::<u64>().unwrap_or(0))
-                    .ok_or_else(|| ParseError::ParseError("未找到指定的番剧集数".to_string()))?;
 
                 let download_items = self
                     .create_episode_meta(&bangumi_info.title, &episode, &config)
@@ -249,8 +279,8 @@ impl<'a> Parser for BangumiParser<'a> {
                 })
             }
             UrlType::BangumiSeason(ss_id) => {
-                // 获取番剧信息
-                let bangumi_info = self.get_season_info(Some(ss_id), None).await?;
+                // 整季下载，使用SeasonQuery策略
+                let bangumi_info = self.query_bangumi(SeasonQuery(ss_id.clone())).await?;
                 let episode_range = config.episode_range.as_ref();
                 debug!("番剧 {} 共有 {} 集", bangumi_info.title, bangumi_info.total);
                 debug!("指定的集数范围: {:?}", episode_range);
