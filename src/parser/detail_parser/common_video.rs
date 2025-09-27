@@ -4,8 +4,11 @@ use crate::common::models::{DownloadType, ParsedMeta};
 use crate::downloader::models::{DownloadTask, FileType};
 use crate::parser::detail_parser::Parser;
 use crate::parser::detail_parser::danmaku_handler::DanmakuHandler;
+use crate::parser::detail_parser::error_utils::handle_api_error;
 use crate::parser::detail_parser::models::{DashItem, DownloadConfig, PlayUrlData};
 use crate::parser::detail_parser::parser_trait::ParserOptions;
+use crate::parser::detail_parser::stream_utils::{select_audio_stream, select_video_stream};
+use crate::parser::detail_parser::task_utils::{create_audio_task, create_danmaku_task, create_video_task};
 use crate::parser::errors::ParseError;
 use crate::parser::models::{UrlType, VideoQuality};
 
@@ -84,28 +87,7 @@ impl<'a> CommonVideoParser<'a> {
 
         // 检查API返回的错误码
         if resp.code != 0 {
-            return match resp.code {
-                -403 => Err(ParseError::ParseError(format!(
-                    "访问被拒绝（-403）: {}。可能原因：1. 视频需要登录或大会员权限 2. 视频被删除或私密 3. 地区限制",
-                    resp.message
-                ))),
-                -404 => Err(ParseError::ParseError(format!(
-                    "视频不存在（-404）: {}。视频可能已被删除或URL错误",
-                    resp.message
-                ))),
-                62002 => Err(ParseError::ParseError(format!(
-                    "视频不可见（62002）: {}。视频可能是私密视频或需要特定权限",
-                    resp.message
-                ))),
-                62012 => Err(ParseError::ParseError(format!(
-                    "视频审核中（62012）: {}。视频正在审核，暂时无法访问",
-                    resp.message
-                ))),
-                _ => Err(ParseError::ParseError(format!(
-                    "API返回错误（{}）: {}",
-                    resp.code, resp.message
-                ))),
-            };
+            return Err(handle_api_error(resp.code, &resp.message, "视频"));
         }
 
         resp.data
@@ -143,24 +125,7 @@ impl<'a> CommonVideoParser<'a> {
 
         // 检查API返回的错误码
         if resp.code != 0 {
-            return match resp.code {
-                -403 => Err(ParseError::ParseError(format!(
-                    "播放地址获取被拒绝（-403）: {}。可能原因：1. 清晰度需要大会员权限 2. Cookie已过期 3. 需要登录",
-                    resp.message
-                ))),
-                -404 => Err(ParseError::ParseError(format!(
-                    "播放地址不存在（-404）: {}。视频可能已被删除",
-                    resp.message
-                ))),
-                -10403 => Err(ParseError::ParseError(format!(
-                    "大会员专享（-10403）: {}。当前清晰度需要大会员权限，请登录大会员账号或选择较低清晰度",
-                    resp.message
-                ))),
-                _ => Err(ParseError::ParseError(format!(
-                    "播放地址API返回错误（{}）: {}",
-                    resp.code, resp.message
-                ))),
-            };
+            return Err(handle_api_error(resp.code, &resp.message, "播放地址"));
         }
 
         resp.data
@@ -172,100 +137,6 @@ impl<'a> CommonVideoParser<'a> {
                     Ok(data)
                 }
             })
-    }
-
-    fn select_video_stream(
-        &self,
-        streams: &[DashItem],
-        resolution: VideoQuality,
-    ) -> Result<Option<String>, ParseError> {
-        if streams.is_empty() {
-            return Err(ParseError::ParseError(
-                "没有可用的视频流。可能原因：1. 视频需要大会员权限 2. 当前清晰度不可用 3. Cookie已过期，请重新登录".to_string()
-            ));
-        }
-
-        debug!("可用的视频流数量: {}", streams.len());
-        for (i, stream) in streams.iter().enumerate() {
-            debug!(
-                "流 {}: 清晰度ID={}, width={:?}, height={:?}",
-                i, stream.id, stream.width, stream.height
-            );
-        }
-
-        let target_quality_id = resolution as i32;
-        debug!("目标清晰度ID: {}", target_quality_id);
-
-        // 首先尝试精确匹配清晰度ID
-        if let Some(stream) = streams.iter().find(|s| s.id == target_quality_id) {
-            debug!("找到精确匹配的清晰度: ID={}", stream.id);
-            return Ok(Some(stream.base_url.clone()));
-        }
-
-        // 如果没有精确匹配，选择最接近且不超过目标清晰度的流
-        let mut suitable_streams: Vec<_> = streams
-            .iter()
-            .filter(|s| s.id <= target_quality_id)
-            .collect();
-
-        if !suitable_streams.is_empty() {
-            // 按清晰度ID降序排序，选择最高的
-            suitable_streams.sort_by(|a, b| b.id.cmp(&a.id));
-            let selected = suitable_streams[0];
-            debug!(
-                "选择最接近的清晰度: ID={} (目标: {})",
-                selected.id, target_quality_id
-            );
-            return Ok(Some(selected.base_url.clone()));
-        }
-
-        // 如果所有流的清晰度都高于目标，选择最低的
-        let mut all_streams = streams.to_vec();
-        all_streams.sort_by(|a, b| a.id.cmp(&b.id));
-        let fallback = &all_streams[0];
-
-        // 检查是否是高质量视频权限问题
-        let highest_available_quality = all_streams.last().map(|s| s.id).unwrap_or(0);
-        if target_quality_id >= 112 && highest_available_quality < target_quality_id {
-            // 112是1080P+
-            warn!(
-                "目标清晰度 {} 可能需要大会员权限，最高可用清晰度: {}",
-                target_quality_id, highest_available_quality
-            );
-            warn!("💡 提示：1080P+、4K等高清晰度通常需要大会员权限，请确保已登录大会员账号");
-        }
-
-        debug!("目标清晰度过低，降级到最低可用清晰度: ID={}", fallback.id);
-
-        Ok(Some(fallback.base_url.clone()))
-    }
-
-    fn select_audio_stream(&self, streams: &[DashItem]) -> Result<Option<String>, ParseError> {
-        if streams.is_empty() {
-            return Err(ParseError::ParseError(
-                "没有可用的音频流。可能原因：1. 视频源异常 2. 网络问题 3. Cookie已过期".to_string(),
-            ));
-        }
-
-        debug!("可用的音频流数量: {}", streams.len());
-        for (i, stream) in streams.iter().enumerate() {
-            debug!(
-                "音频流 {}: 清晰度ID={}, 编码={}, 带宽={}",
-                i, stream.id, stream.codecs, stream.bandwidth
-            );
-        }
-
-        // 按音频质量（带宽）降序排序，选择最高质量的音频
-        let mut sorted_streams = streams.to_vec();
-        sorted_streams.sort_by(|a, b| b.bandwidth.cmp(&a.bandwidth));
-
-        let selected = &sorted_streams[0];
-        debug!(
-            "选择最高质量音频流: ID={}, 带宽={}",
-            selected.id, selected.bandwidth
-        );
-
-        Ok(Some(selected.base_url.clone()))
     }
 
     async fn create_video_meta(
@@ -282,12 +153,11 @@ impl<'a> CommonVideoParser<'a> {
         let danmaku_download_task = if config.need_danmaku {
             let danmaku_download_url = DanmakuHandler::get_url(video_info.cid)
                 .map_err(|e| ParseError::ParseError(e.to_string()))?;
-            Some(DownloadTask::new(
+            Some(create_danmaku_task(
                 danmaku_download_url,
-                FileType::Danmaku,
-                video_info.title.clone() + ".xml",
-                format!("./tmp/{}-danmaku.xml", video_info.title),
-                video_info.cid.to_string(),
+                &video_info.title,
+                &config.output_dir,
+                video_info.cid,
                 HashMap::from([("desc".to_string(), video_info.desc.clone())]),
             ))
         } else {
@@ -299,14 +169,13 @@ impl<'a> CommonVideoParser<'a> {
 
         // --------------------------------------------------------------------
         let video_stream_task = if config.need_video && play_info.dash.is_some() {
-            self.select_video_stream(&play_info.dash.as_ref().unwrap().video, config.resolution)?
+            select_video_stream(&play_info.dash.as_ref().unwrap().video, config.resolution)?
                 .map(|video_url| {
-                    DownloadTask::new(
+                    create_video_task(
                         video_url,
-                        FileType::Video,
-                        video_info.title.clone() + ".mp4",
-                        format!("./tmp/{}-video.mp4", video_info.title),
-                        video_info.cid.to_string(),
+                        &video_info.title,
+                        None,
+                        &config.output_dir,
                         HashMap::from([("desc".to_string(), video_info.desc.clone())]),
                     )
                 })
@@ -320,14 +189,13 @@ impl<'a> CommonVideoParser<'a> {
 
         // --------------------------------------------------------------------
         let audio_stream_task = if config.need_audio && play_info.dash.is_some() {
-            self.select_audio_stream(&play_info.dash.as_ref().unwrap().audio)?
+            select_audio_stream(&play_info.dash.as_ref().unwrap().audio)?
                 .map(|audio_url| {
-                    DownloadTask::new(
+                    create_audio_task(
                         audio_url,
-                        FileType::Audio,
-                        video_info.title.clone() + ".m4s",
-                        format!("./tmp/{}-audio.m4s", video_info.title),
-                        video_info.cid.to_string(),
+                        &video_info.title,
+                        None,
+                        &config.output_dir,
                         HashMap::from([("desc".to_string(), video_info.desc.clone())]),
                     )
                 })

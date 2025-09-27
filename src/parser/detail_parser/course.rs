@@ -1,13 +1,16 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::common::models::{DownloadType, ParsedMeta};
 use crate::common::{client::client::BiliClient, client::models::common::CommonResponse};
-use crate::downloader::models::{DownloadTask, FileType};
-use crate::parser::detail_parser::models::{CourseEpisode, CourseInfo, DashItem, DownloadConfig};
+use crate::downloader::models::DownloadTask;
+use crate::parser::detail_parser::error_utils::handle_api_error;
+use crate::parser::detail_parser::models::{CourseEpisode, CourseInfo, DownloadConfig};
 use crate::parser::detail_parser::parser_trait::{ParserOptions, parse_episode_range};
-use crate::parser::models::{UrlType, VideoQuality};
+use crate::parser::detail_parser::stream_utils::{select_audio_stream, select_video_stream};
+use crate::parser::detail_parser::task_utils::{create_audio_task, create_video_task};
+use crate::parser::models::UrlType;
 use crate::parser::{
     detail_parser::{Parser, models::PlayUrlData},
     errors::ParseError,
@@ -51,24 +54,7 @@ impl<'a> CourseParser<'a> {
 
         // 检查API返回的错误码
         if resp.code != 0 {
-            return match resp.code {
-                -403 => Err(ParseError::ParseError(format!(
-                    "课程访问被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. 需要登录 3. 权限不足",
-                    resp.message
-                ))),
-                -404 => Err(ParseError::ParseError(format!(
-                    "课程不存在（-404）: {}。课程可能已下架或URL错误",
-                    resp.message
-                ))),
-                -500 => Err(ParseError::ParseError(format!(
-                    "课程访问限制（-500）: {}。课程可能需要购买或特定权限",
-                    resp.message
-                ))),
-                _ => Err(ParseError::ParseError(format!(
-                    "课程API返回错误（{}）: {}",
-                    resp.code, resp.message
-                ))),
-            };
+            return Err(handle_api_error(resp.code, &resp.message, "课程"));
         }
 
         resp.data
@@ -103,94 +89,11 @@ impl<'a> CourseParser<'a> {
 
         // 检查API返回的错误码
         if resp.code != 0 {
-            return match resp.code {
-                -403 => Err(ParseError::ParseError(format!(
-                    "课程播放地址获取被拒绝（-403）: {}。可能原因：1. 课程需要购买 2. Cookie已过期 3. 需要登录",
-                    resp.message
-                ))),
-                -404 => Err(ParseError::ParseError(format!(
-                    "课程播放地址不存在（-404）: {}。课程可能已下架",
-                    resp.message
-                ))),
-                -500 => Err(ParseError::ParseError(format!(
-                    "课程播放限制（-500）: {}。课程可能需要购买或特定权限",
-                    resp.message
-                ))),
-                _ => Err(ParseError::ParseError(format!(
-                    "课程播放地址API返回错误（{}）: {}",
-                    resp.code, resp.message
-                ))),
-            };
+            return Err(handle_api_error(resp.code, &resp.message, "课程播放地址"));
         }
 
         resp.data
             .ok_or_else(|| ParseError::ParseError("API响应中未找到播放地址信息".to_string()))
-    }
-
-    fn select_video_stream(
-        &self,
-        streams: &[DashItem],
-        resolution: VideoQuality,
-    ) -> Result<Option<String>, ParseError> {
-        if streams.is_empty() {
-            return Err(ParseError::ParseError(
-                "没有可用的视频流。可能原因：1. 视频需要大会员权限 2. 当前清晰度不可用 3. Cookie已过期，请重新登录".to_string()
-            ));
-        }
-
-        debug!("可用的视频流数量: {}", streams.len());
-        for (i, stream) in streams.iter().enumerate() {
-            debug!(
-                "流 {}: 清晰度ID={}, width={:?}, height={:?}",
-                i, stream.id, stream.width, stream.height
-            );
-        }
-
-        let target_quality_id = resolution as i32;
-        debug!("目标清晰度ID: {}", target_quality_id);
-
-        // 首先尝试精确匹配清晰度ID
-        if let Some(stream) = streams.iter().find(|s| s.id == target_quality_id) {
-            debug!("找到精确匹配的清晰度: ID={}", stream.id);
-            return Ok(Some(stream.base_url.clone()));
-        }
-
-        // 如果没有精确匹配，选择最接近且不超过目标清晰度的流
-        let mut suitable_streams: Vec<_> = streams
-            .iter()
-            .filter(|s| s.id <= target_quality_id)
-            .collect();
-
-        if !suitable_streams.is_empty() {
-            // 按清晰度ID降序排序，选择最高的
-            suitable_streams.sort_by(|a, b| b.id.cmp(&a.id));
-            let selected = suitable_streams[0];
-            debug!(
-                "选择最接近的清晰度: ID={} (目标: {})",
-                selected.id, target_quality_id
-            );
-            return Ok(Some(selected.base_url.clone()));
-        }
-
-        // 如果所有流的清晰度都高于目标，选择最低的
-        let mut all_streams = streams.to_vec();
-        all_streams.sort_by(|a, b| a.id.cmp(&b.id));
-        let fallback = &all_streams[0];
-
-        // 检查是否是高质量视频权限问题
-        let highest_available_quality = all_streams.last().map(|s| s.id).unwrap_or(0);
-        if target_quality_id >= 112 && highest_available_quality < target_quality_id {
-            // 112是1080P+
-            warn!(
-                "目标清晰度 {} 可能需要大会员权限，最高可用清晰度: {}",
-                target_quality_id, highest_available_quality
-            );
-            warn!("💡 提示：1080P+、4K等高清晰度通常需要大会员权限，请确保已登录大会员账号");
-        }
-
-        debug!("目标清晰度过低，降级到最低可用清晰度: ID={}", fallback.id);
-
-        Ok(Some(fallback.base_url.clone()))
     }
 
     // 根据单集课程信息创建视频元数据
@@ -208,14 +111,13 @@ impl<'a> CourseParser<'a> {
 
         // --------------------------------------------------------------------
         let video_stream_task = if config.need_video && play_info.dash.is_some() {
-            self.select_video_stream(&play_info.dash.as_ref().unwrap().video, config.resolution)?
+            select_video_stream(&play_info.dash.as_ref().unwrap().video, config.resolution)?
                 .map(|video_url| {
-                    DownloadTask::new(
+                    create_video_task(
                         video_url,
-                        FileType::Video,
-                        format!("{} - {}.mp4", title, episode.title),
-                        format!("./tmp/{}-{}.mp4", title, episode.title),
-                        config.output_dir.clone(),
+                        title,
+                        Some(&episode.title),
+                        &config.output_dir,
                         HashMap::new(),
                     )
                 })
@@ -225,21 +127,16 @@ impl<'a> CourseParser<'a> {
 
         // --------------------------------------------------------------------
         let audio_stream_task = if config.need_audio && play_info.dash.is_some() {
-            // 如果需要音频且有 DASH 流
-            let audio_url = play_info
-                .dash
-                .as_ref()
-                .and_then(|d| d.audio.first())
-                .ok_or_else(|| ParseError::ParseError("未找到音频流".to_string()))?;
-            // 构建下载任务
-            Some(DownloadTask {
-                url: audio_url.base_url.clone(),
-                file_type: FileType::Audio,
-                name: format!("{} - {}.m4s", title, episode.title),
-                output_path: format!("./tmp/{}-{}.m4s", title, episode.title),
-                temp_path: config.output_dir.clone(),
-                metadata: HashMap::new(),
-            })
+            select_audio_stream(&play_info.dash.as_ref().unwrap().audio)?
+                .map(|audio_url| {
+                    create_audio_task(
+                        audio_url,
+                        title,
+                        Some(&episode.title),
+                        &config.output_dir,
+                        HashMap::new(),
+                    )
+                })
         } else {
             None
         };

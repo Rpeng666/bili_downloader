@@ -6,11 +6,14 @@ use tracing::debug;
 use crate::common::client::client::BiliClient;
 use crate::common::client::models::common::CommonResponse;
 use crate::common::models::DownloadType;
-use crate::downloader::models::{DownloadTask, FileType};
+use crate::downloader::models::DownloadTask;
+use crate::parser::detail_parser::stream_utils::{select_audio_stream, select_video_stream};
+use crate::parser::detail_parser::task_utils::{create_audio_task, create_video_task};
 use crate::parser::detail_parser::Parser;
 use crate::parser::detail_parser::models::{DownloadConfig, PlayUrlData};
 use crate::parser::detail_parser::parser_trait::{ParserOptions, parse_episode_range};
 use crate::parser::models::UrlType;
+use crate::parser::detail_parser::error_utils::handle_api_error;
 use crate::parser::{ParsedMeta, errors::ParseError};
 
 // 番剧单集信息响应
@@ -116,28 +119,7 @@ impl<'a> BangumiParser<'a> {
 
         // 检查API返回的错误码
         if resp.code != 0 {
-            return match resp.code {
-                -403 => Err(ParseError::ParseError(format!(
-                    "番剧访问被拒绝（-403）: {}。可能原因：1. 番剧需要大会员权限 2. 地区限制 3. 需要登录",
-                    resp.message
-                ))),
-                -404 => Err(ParseError::ParseError(format!(
-                    "番剧不存在（-404）: {}。番剧可能已下架或URL错误",
-                    resp.message
-                ))),
-                -10403 => Err(ParseError::ParseError(format!(
-                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号",
-                    resp.message
-                ))),
-                6001 => Err(ParseError::ParseError(format!(
-                    "地区限制（6001）: {}。此番剧在当前地区不可观看",
-                    resp.message
-                ))),
-                _ => Err(ParseError::ParseError(format!(
-                    "番剧API返回错误（{}）: {}",
-                    resp.code, resp.message
-                ))),
-            };
+            return Err(handle_api_error(resp.code, &resp.message, "番剧"));
         }
 
         resp.result
@@ -166,28 +148,7 @@ impl<'a> BangumiParser<'a> {
 
         // 检查API返回的错误码
         if resp.code != 0 {
-            return match resp.code {
-                -403 => Err(ParseError::ParseError(format!(
-                    "番剧播放地址获取被拒绝（-403）: {}。可能原因：1. 需要大会员权限 2. Cookie已过期 3. 需要登录",
-                    resp.message
-                ))),
-                -404 => Err(ParseError::ParseError(format!(
-                    "番剧播放地址不存在（-404）: {}。番剧可能已下架",
-                    resp.message
-                ))),
-                -10403 => Err(ParseError::ParseError(format!(
-                    "大会员专享番剧（-10403）: {}。此番剧需要大会员权限，请登录大会员账号",
-                    resp.message
-                ))),
-                6001 => Err(ParseError::ParseError(format!(
-                    "地区限制（6001）: {}。此番剧在当前地区不可观看",
-                    resp.message
-                ))),
-                _ => Err(ParseError::ParseError(format!(
-                    "番剧播放地址API返回错误（{}）: {}",
-                    resp.code, resp.message
-                ))),
-            };
+            return Err(handle_api_error(resp.code, &resp.message, "番剧播放地址"));
         }
 
         resp.result
@@ -208,55 +169,34 @@ impl<'a> BangumiParser<'a> {
 
         let mut download_task_vec: Vec<DownloadTask> = Vec::new();
 
-        let video_stream_task = if config.need_video {
-            if let Some(video_url) = play_info.dash.as_ref().and_then(|d| d.video.first()) {
-                Some(DownloadTask::new(
-                    video_url.base_url.clone(),
-                    FileType::Video,
-                    format!("{} - {} - {}", title, episode.title, video_url.id),
-                    format!("./tmp/{} - {} - {}.mp4", title, episode.title, video_url.id),
-                    config.output_dir.clone(),
-                    HashMap::new(),
-                ))
-            } else if let Some(durl_info) = play_info.durls.as_ref().and_then(|d| d.first()) {
-                let durl_item = durl_info
-                    .durl
-                    .first()
-                    .ok_or_else(|| ParseError::ParseError("未找到 MP4 流信息".to_string()))?;
-
-                Some(DownloadTask::new(
-                    durl_item.url.clone(),
-                    FileType::Video,
-                    format!("{} - {} - {}.mp4", title, episode.title, durl_item.order),
-                    format!(
-                        "./tmp/{} - {} - {}.mp4",
-                        title, episode.title, durl_item.order
-                    ),
-                    config.output_dir.clone(),
-                    HashMap::from([("desc".to_string(), episode.title.clone())]),
-                ))
-            } else {
-                return Err(ParseError::ParseError(
-                    "未找到 DASH 或 MP4 格式的视频流".to_string(),
-                ));
-            }
+        // --------------------------------------------------------------------
+        let video_stream_task = if config.need_video && play_info.dash.is_some() {
+            select_video_stream(&play_info.dash.as_ref().unwrap().video, config.resolution)?
+                .map(|video_url| {
+                    create_video_task(
+                        video_url,
+                        title,
+                        Some(&episode.title),
+                        &config.output_dir,
+                        HashMap::new(),
+                    )
+                })
         } else {
             None
         };
 
-        let audio_stream_task = if config.need_audio {
-            if let Some(audio_url) = play_info.dash.as_ref().and_then(|d| d.audio.first()) {
-                Some(DownloadTask::new(
-                    audio_url.base_url.clone(),
-                    FileType::Audio,
-                    format!("{} - {} - {}.m4s", title, episode.title, audio_url.id),
-                    format!("./tmp/{} - {} - {}.m4s", title, episode.title, audio_url.id),
-                    config.output_dir.clone(),
-                    HashMap::from([("desc".to_string(), episode.title.clone())]),
-                ))
-            } else {
-                None
-            }
+        // --------------------------------------------------------------------
+        let audio_stream_task = if config.need_audio && play_info.dash.is_some() {
+            select_audio_stream(&play_info.dash.as_ref().unwrap().audio)?
+                .map(|audio_url| {
+                    create_audio_task(
+                        audio_url,
+                        title,
+                        Some(&episode.title),
+                        &config.output_dir,
+                        HashMap::new(),
+                    )
+                })
         } else {
             None
         };

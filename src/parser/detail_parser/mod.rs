@@ -4,6 +4,9 @@ pub mod course;
 pub mod models;
 pub mod parser_trait;
 pub mod danmaku_handler;
+pub mod stream_utils;
+pub mod error_utils;
+pub mod task_utils;
 
 pub use bangumi::BangumiParser;
 pub use common_video::CommonVideoParser;
