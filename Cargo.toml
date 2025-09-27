@@ -5,6 +5,10 @@ edition = "2024"
 description = "一个简单的B站视频下载工具"
 authors = ["rpeng252@gmail.com"]
 
+[lib]
+name = "bili_downloader"
+path = "src/lib.rs"
+
 [[bin]]
 name = "bilidl"
 path = "src/main.rs"

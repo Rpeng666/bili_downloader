@@ -137,16 +137,18 @@ pub struct Cli {
     /// 是否下载视频流
     #[arg(long)]
     #[arg(help = "是否下载视频画面，默认启用")]
+    #[arg(default_value = "true")]
     pub need_video: bool,
 
     /// 是否下载音频流
     #[arg(long)]
     #[arg(help = "是否下载音频，默认启用")]
+    #[arg(default_value = "true")]
     pub need_audio: bool,
 
     /// 是否下载字幕
     #[arg(long)]
-    #[arg(help = "是否下载字幕文件 (如果视频有字幕)，默认启用")]
+    #[arg(help = "是否下载字幕文件 (如果视频有字幕)")]
     pub need_subtitle: bool,
 
     /// 是否下载弹幕
@@ -157,6 +159,7 @@ pub struct Cli {
     /// 是否合并音视频
     #[arg(long)]
     #[arg(help = "下载完成后是否自动合并音视频文件 (需要FFmpeg)，默认启用")]
+    #[arg(default_value = "true")]
     pub merge: bool,
 
     /// 下载并发数
